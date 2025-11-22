@@ -1,0 +1,1557 @@
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import Header from './Header';
+import { Project, Step, StepVersion, CategoryConfig, StatusConfig } from '../types';
+import { FULL_ICON_MAP } from './ProjectList';
+import ConfirmModal from './ConfirmModal';
+import { 
+  Layout, Database, Palette, CheckCircle2, Circle, Clock, LucideIcon,
+  Edit2, Save, Plus, Trash2, Bot, Copy, Check, GripVertical, X, Fingerprint, Terminal,
+  AlertOctagon, ChevronDown, ChevronRight, GitBranch, MoveUp, Minimize2, Maximize2, CornerDownRight,
+  ChevronUp, Tag, Layers, Play, Pause, Flag, Archive, Bookmark, Zap, AlertTriangle, Activity,
+  RefreshCw, FileWarning
+} from 'lucide-react';
+
+// --- Constants ---
+interface CategoryStyle {
+  color: string;
+  icon: LucideIcon;
+  bg: string;
+  border: string;
+  text: string;
+  badgeBorder: string;
+}
+
+// Helper to generate style object dynamically
+const createCategoryStyle = (color: string, Icon: LucideIcon): CategoryStyle => ({
+  color,
+  icon: Icon,
+  bg: `bg-${color}-50 dark:bg-${color}-950/20`,
+  border: `border-${color}-200 dark:border-${color}-500/30`,
+  badgeBorder: `border-${color}-300 dark:border-${color}-500/50`,
+  text: `text-${color}-600 dark:text-${color}-400`
+});
+
+const BASE_CATEGORIES: Record<string, CategoryStyle> = {
+  frontend: createCategoryStyle('cyan', Layout),
+  backend: createCategoryStyle('violet', Database),
+  design: createCategoryStyle('rose', Palette)
+};
+
+// Default Status Configurations
+const BASE_STATUSES: Record<string, StatusConfig> = {
+  'pending': { key: 'pending', label: 'Pending', color: 'slate', icon: 'Circle' },
+  'in-progress': { key: 'in-progress', label: 'In Progress', color: 'amber', icon: 'Clock' },
+  'completed': { key: 'completed', label: 'Completed', color: 'emerald', icon: 'CheckCircle2' },
+  'failed': { key: 'failed', label: 'Failed', color: 'red', icon: 'AlertOctagon' }
+};
+
+const AVAILABLE_COLORS = [
+  'slate', 'red', 'orange', 'amber', 'yellow', 'lime', 'green', 'emerald', 
+  'teal', 'cyan', 'sky', 'blue', 'indigo', 'violet', 'purple', 'fuchsia', 'pink', 'rose'
+];
+
+// --- Helper Component for History Items ---
+const HistoryItem: React.FC<{ version: StepVersion; index: number }> = ({ version, index }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="relative pl-6 pb-2">
+      {/* Tree Connector Line */}
+      <div className="absolute left-0 top-0 bottom-0 w-px bg-slate-300 dark:bg-slate-800"></div>
+      <div className="absolute left-0 top-4 w-4 h-px bg-slate-300 dark:bg-slate-800"></div>
+
+      <div 
+        onClick={() => setExpanded(!expanded)}
+        className={`
+          group rounded-md border cursor-pointer transition-all duration-200 relative overflow-hidden
+          ${expanded 
+            ? 'bg-white dark:bg-slate-900 border-rose-500/40 shadow-lg' 
+            : 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-white dark:hover:bg-slate-800/60'}
+        `}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setExpanded(!expanded)}
+        aria-expanded={expanded}
+      >
+        {/* Status Bar */}
+        <div className={`absolute left-0 top-0 bottom-0 w-1 ${expanded ? 'bg-rose-500' : 'bg-rose-200 dark:bg-rose-900/50 group-hover:bg-rose-400 dark:group-hover:bg-rose-800'}`} />
+
+        <div className="p-3 pl-4">
+          <div className="flex justify-between items-center gap-3">
+            
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className={`p-1.5 rounded-full flex-shrink-0 ${expanded ? 'bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400' : 'bg-slate-200 dark:bg-slate-800 text-slate-500'}`}>
+                <AlertOctagon size={12} aria-hidden="true" />
+              </div>
+              
+              <div className="flex flex-col min-w-0">
+                <div className="flex items-center gap-2">
+                   <span className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate">
+                     {version.failureReason ? `Revision: ${version.failureReason}` : `Failed Attempt #${index + 1}`}
+                   </span>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+                   <span>{new Date(version.timestamp).toLocaleString()}</span>
+                   <span>•</span>
+                   <span className="uppercase tracking-wider">Archived</span>
+                </div>
+              </div>
+            </div>
+            
+            <div className="text-slate-400 dark:text-slate-600 group-hover:text-slate-600 dark:group-hover:text-slate-400">
+              {expanded ? <ChevronUp size={14} aria-hidden="true" /> : <ChevronDown size={14} aria-hidden="true" />}
+            </div>
+          </div>
+
+          {/* Expanded Content */}
+          <div className={`
+            grid transition-all duration-300 ease-in-out
+            ${expanded ? 'grid-rows-[1fr] opacity-100 mt-3 pt-3 border-t border-slate-100 dark:border-slate-800' : 'grid-rows-[0fr] opacity-0'}
+          `}>
+            <div className="overflow-hidden min-h-0">
+               {version.failureReason && (
+                  <div className="mb-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-100 dark:border-rose-900/30 rounded p-2">
+                    <span className="text-[10px] uppercase font-bold text-rose-600 dark:text-rose-500 block mb-1">Reason for Failure</span>
+                    <p className="text-xs text-rose-800 dark:text-rose-200 font-sans italic">"{version.failureReason}"</p>
+                  </div>
+               )}
+               
+               <div className="bg-slate-50 dark:bg-black/30 rounded p-2 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Snapshot Content</span>
+                  <p className="text-xs text-slate-700 dark:text-slate-400 font-mono whitespace-pre-wrap leading-relaxed">
+                    {version.content}
+                  </p>
+               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Sub Card Component ---
+const SubStepCard: React.FC<{ 
+  step: Step; 
+  categories: Record<string, CategoryStyle>;
+  statuses: Record<string, StatusConfig>;
+  onPromote: () => void;
+  onDelete: () => void;
+  onUpdate: (step: Step) => void;
+}> = ({ step, categories, statuses, onPromote, onDelete, onUpdate }) => {
+  const [expanded, setExpanded] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState<Step>(step);
+
+  useEffect(() => {
+    setFormData(step);
+  }, [step]);
+
+  const style = categories[step.category] || categories.frontend || BASE_CATEGORIES.frontend;
+  const Icon = style.icon;
+  
+  // Resolve Status Style
+  const statusConfig = statuses[step.status] || statuses.pending;
+  const StatusIcon = FULL_ICON_MAP[statusConfig.icon] || Circle;
+
+  const updateField = (field: keyof Step, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSave = () => {
+    onUpdate(formData);
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setFormData(step);
+    setIsEditing(false);
+  };
+
+  return (
+    <div className="relative pl-8 mb-3 group">
+      {/* Connector Line */}
+      <div className="absolute left-0 top-0 h-full w-px bg-slate-300 dark:bg-slate-800 group-hover:bg-slate-400 dark:group-hover:bg-slate-700 transition-colors"></div>
+      <div className="absolute left-0 top-6 w-6 h-px bg-slate-300 dark:bg-slate-800 group-hover:bg-slate-400 dark:group-hover:bg-slate-700 transition-colors"></div>
+      
+      <div className={`
+        border rounded-lg bg-white dark:bg-slate-900/60 transition-all duration-200
+        ${expanded || isEditing ? 'border-slate-300 dark:border-slate-700 shadow-xl' : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-600'}
+        ${isEditing ? 'ring-1 ring-cyan-500/30' : ''}
+      `}>
+        {isEditing ? (
+          // --- EDIT MODE ---
+          <div className="p-3 animate-in fade-in duration-200">
+             <div className="flex flex-col gap-3">
+                {/* Header Inputs */}
+                <div className="flex flex-col sm:flex-row gap-2">
+                   <div className="flex-1">
+                      <label htmlFor={`sub-title-${step.id}`} className="text-[9px] uppercase tracking-widest text-slate-500 font-bold block mb-1">Sub-Task Title</label>
+                      <input 
+                        id={`sub-title-${step.id}`}
+                        value={formData.title}
+                        onChange={e => updateField('title', e.target.value)}
+                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1.5 text-xs text-slate-900 dark:text-white focus:border-cyan-500 outline-none font-bold"
+                        autoFocus
+                      />
+                   </div>
+                   <div className="flex gap-2">
+                     <div className="w-24">
+                        <label htmlFor={`sub-cat-${step.id}`} className="text-[9px] uppercase tracking-widest text-slate-500 font-bold block mb-1">Cat.</label>
+                        <select 
+                          id={`sub-cat-${step.id}`}
+                          value={formData.category}
+                          onChange={e => updateField('category', e.target.value)}
+                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1.5 text-[10px] uppercase text-slate-700 dark:text-slate-300 focus:border-cyan-500 outline-none"
+                        >
+                          {Object.keys(categories).map(key => (
+                            <option key={key} value={key}>{key}</option>
+                          ))}
+                        </select>
+                     </div>
+                     <div className="w-24">
+                        <label htmlFor={`sub-stat-${step.id}`} className="text-[9px] uppercase tracking-widest text-slate-500 font-bold block mb-1">Status</label>
+                        <select 
+                          id={`sub-stat-${step.id}`}
+                          value={formData.status}
+                          onChange={e => updateField('status', e.target.value)}
+                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-1.5 text-[10px] uppercase text-slate-700 dark:text-slate-300 focus:border-cyan-500 outline-none"
+                        >
+                          {(Object.values(statuses) as StatusConfig[]).map(s => (
+                             <option key={s.key} value={s.key}>{s.label}</option>
+                          ))}
+                        </select>
+                     </div>
+                   </div>
+                </div>
+
+                {/* Content Input */}
+                <div>
+                   <label htmlFor={`sub-content-${step.id}`} className="text-[9px] uppercase tracking-widest text-slate-500 font-bold block mb-1">Details</label>
+                   <textarea 
+                      id={`sub-content-${step.id}`}
+                      value={formData.content}
+                      onChange={e => updateField('content', e.target.value)}
+                      className="w-full h-20 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-2 py-2 text-xs text-slate-800 dark:text-slate-300 focus:border-cyan-500 outline-none resize-none font-mono"
+                   />
+                </div>
+
+                {/* Actions */}
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-800/50">
+                   <button 
+                     onClick={handleCancel}
+                     className="text-[10px] font-bold uppercase text-slate-500 hover:text-slate-800 dark:hover:text-slate-300 px-2 py-1"
+                   >
+                     Cancel
+                   </button>
+                   <button 
+                     onClick={handleSave}
+                     className="text-[10px] font-bold uppercase bg-cyan-600 hover:bg-cyan-500 text-white px-3 py-1 rounded shadow-sm"
+                   >
+                     Save Changes
+                   </button>
+                </div>
+             </div>
+          </div>
+        ) : (
+          // --- VIEW MODE ---
+          <div className="flex items-center justify-between p-3">
+            <div 
+               className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer"
+               role="button"
+               tabIndex={0}
+               onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setExpanded(!expanded)}
+               onClick={() => setExpanded(!expanded)}
+               aria-expanded={expanded}
+            >
+                <div className={`p-1.5 rounded ${style.bg} ${style.text}`}>
+                  <Icon size={14} aria-hidden="true" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h4 className={`text-sm font-bold truncate ${expanded ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>{step.title}</h4>
+                    <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded border ${style.border} ${style.text} bg-slate-50 dark:bg-slate-950/30`}>
+                      {step.category}
+                    </span>
+                    
+                    <div className={`flex items-center gap-1 text-${statusConfig.color}-600 dark:text-${statusConfig.color}-400`}>
+                      <StatusIcon size={12} aria-hidden="true" />
+                    </div>
+                  </div>
+                  {!expanded && (
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono max-w-[200px]">
+                      {step.content.substring(0, 30)}...
+                    </p>
+                  )}
+                </div>
+            </div>
+
+             <div className="flex items-center gap-2 ml-2">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onPromote(); }}
+                  className="p-1 text-slate-400 hover:text-cyan-600 dark:text-slate-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  title="Promote to Main Timeline"
+                  aria-label={`Promote sub-task ${step.title}`}
+                >
+                  <MoveUp size={14} aria-hidden="true" />
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+                  className="p-1 text-slate-400 hover:text-cyan-600 dark:text-slate-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  title={expanded ? "Collapse" : "Expand"}
+                  aria-label={expanded ? "Collapse sub-task" : "Expand sub-task"}
+                >
+                  {expanded ? <Minimize2 size={14} aria-hidden="true" /> : <Maximize2 size={14} aria-hidden="true" />}
+                </button>
+              </div>
+           </div>
+        )}
+
+        {/* Expanded Content View Mode */}
+        {!isEditing && expanded && (
+            <div className="px-3 pb-3 pt-0 animate-in fade-in slide-in-from-top-1">
+            <div className="border-t border-slate-200 dark:border-slate-800/50 pt-3 mt-1">
+                <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap font-light leading-relaxed mb-3">
+                {step.content}
+                </p>
+                <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800/30 pt-2">
+                    <button 
+                    onClick={() => setIsEditing(true)}
+                    className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-cyan-600 dark:text-slate-400 dark:hover:text-cyan-400 uppercase font-bold px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                    <Edit2 size={10} aria-hidden="true" /> Edit
+                    </button>
+                    <button 
+                    onClick={() => onDelete()}
+                    className="flex items-center gap-1 text-[10px] text-rose-700 hover:text-rose-500 dark:text-rose-900 dark:hover:text-rose-500 uppercase font-bold px-2 py-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                    >
+                    <Trash2 size={10} aria-hidden="true" /> Delete
+                    </button>
+                </div>
+            </div>
+            </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+interface ProjectDetailProps {
+  project: Project;
+  onUpdateProject: (updatedProject: Project) => void;
+  onDeleteProject: (id: string) => void;
+  onBack: () => void;
+  // New Props for Global Settings consumption
+  activeProjectIcons: string[];
+  activeStatusIcons: string[];
+  theme: 'light' | 'dark';
+  onToggleTheme: () => void;
+}
+
+interface ConfirmState {
+  isOpen: boolean;
+  title: string;
+  message: string;
+  onConfirm: () => void;
+  isDanger: boolean;
+}
+
+const ProjectDetail: React.FC<ProjectDetailProps> = ({ 
+  project, 
+  onUpdateProject, 
+  onDeleteProject, 
+  onBack,
+  activeProjectIcons,
+  activeStatusIcons,
+  theme,
+  onToggleTheme
+}) => {
+  // UI State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isEditingDesc, setIsEditingDesc] = useState(false);
+  const [editingStepId, setEditingStepId] = useState<string | null>(null);
+  const [editFormData, setEditFormData] = useState<Partial<Step>>({});
+  const [copiedStepId, setCopiedStepId] = useState<string | null>(null);
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  
+  // Local Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<ConfirmState | null>(null);
+
+  // Category Management State
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColor, setNewCategoryColor] = useState('cyan');
+
+  // Status Management State
+  const [newStatusName, setNewStatusName] = useState('');
+  const [newStatusColor, setNewStatusColor] = useState('emerald');
+  const [newStatusIcon, setNewStatusIcon] = useState('Flag');
+
+  // Expanded History State
+  const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
+  
+  // Completed Steps Expansion State (Shrunk by default)
+  const [expandedCompletedSteps, setExpandedCompletedSteps] = useState<Record<string, boolean>>({});
+
+  // Project Info Editing State
+  const [description, setDescription] = useState(project.description);
+
+  // Drag and Drop State
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragTarget, setDragTarget] = useState<{ index: number; type: 'gap' | 'card' } | null>(null);
+
+  // Computed Categories
+  const allCategories = useMemo(() => {
+    const cats = { ...BASE_CATEGORIES };
+    if (project.categories) {
+      project.categories.forEach(c => {
+        cats[c.key] = createCategoryStyle(c.color, Tag); // Default to Tag icon for custom
+      });
+    }
+    return cats;
+  }, [project.categories]);
+
+  // Computed Statuses
+  const allStatuses = useMemo(() => {
+    const statuses: Record<string, StatusConfig> = { ...BASE_STATUSES };
+    if (project.statuses) {
+      project.statuses.forEach(s => {
+        statuses[s.key] = s;
+      });
+    }
+    return statuses;
+  }, [project.statuses]);
+
+  // Sync local info form if project prop changes externally
+  useEffect(() => {
+    setDescription(project.description);
+  }, [project.description]);
+
+  // --- Handlers: Description ---
+
+  const handleSaveDesc = () => {
+    onUpdateProject({
+      ...project,
+      description
+    });
+    setIsEditingDesc(false);
+  };
+
+  const handleCancelDesc = () => {
+    setDescription(project.description);
+    setIsEditingDesc(false);
+  };
+
+  const handleDownloadProject = () => {
+    const jsonString = JSON.stringify(project, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const href = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = href;
+    link.download = `${project.name.replace(/\s+/g, '_').toLowerCase()}.json`;
+    document.body.appendChild(link);
+    link.click();
+    
+    document.body.removeChild(link);
+    URL.revokeObjectURL(href);
+  };
+
+  // --- Handlers: Settings ---
+  const handleUpdateName = (name: string) => {
+    onUpdateProject({ ...project, name });
+  };
+
+  const handleUpdateIcon = (iconKey: string) => {
+    onUpdateProject({ ...project, icon: iconKey });
+  };
+
+  const handleAddCategory = () => {
+    if (!newCategoryName.trim()) return;
+    
+    const key = newCategoryName.trim().toLowerCase().replace(/\s+/g, '-');
+    if (allCategories[key]) {
+      alert("Category already exists!");
+      return;
+    }
+
+    const newCat: CategoryConfig = {
+      key,
+      label: newCategoryName.trim(),
+      color: newCategoryColor
+    };
+
+    const updatedCategories = [...(project.categories || []), newCat];
+    onUpdateProject({ ...project, categories: updatedCategories });
+    setNewCategoryName('');
+  };
+
+  const handleDeleteCategory = (key: string) => {
+    if (BASE_CATEGORIES[key]) return; // Cannot delete base categories
+    
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Category?",
+      message: `Are you sure you want to delete category "${key}"? Steps using this category will keep the label but lose custom styling.`,
+      isDanger: true,
+      onConfirm: () => {
+        const updatedCategories = (project.categories || []).filter(c => c.key !== key);
+        onUpdateProject({ ...project, categories: updatedCategories });
+        setConfirmModal(null);
+      }
+    });
+  };
+
+  const handleAddStatus = () => {
+    if (!newStatusName.trim()) return;
+    const key = newStatusName.trim().toLowerCase().replace(/\s+/g, '-');
+    
+    if (allStatuses[key]) {
+      alert("Status key already exists!");
+      return;
+    }
+
+    const newStatus: StatusConfig = {
+      key,
+      label: newStatusName.trim(),
+      color: newStatusColor,
+      icon: newStatusIcon
+    };
+
+    const updatedStatuses = [...(project.statuses || []), newStatus];
+    onUpdateProject({ ...project, statuses: updatedStatuses });
+    setNewStatusName('');
+  };
+
+  const handleDeleteStatus = (key: string) => {
+    if (BASE_STATUSES[key]) return;
+    
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Status?",
+      message: `Are you sure you want to delete status "${key}"? Steps using this status may display incorrectly.`,
+      isDanger: true,
+      onConfirm: () => {
+        const updatedStatuses = (project.statuses || []).filter(s => s.key !== key);
+        onUpdateProject({ ...project, statuses: updatedStatuses });
+        setConfirmModal(null);
+      }
+    });
+  };
+
+  // --- Handlers: Steps ---
+
+  const handleEditClick = (step: Step) => {
+    setEditingStepId(step.id);
+    setEditFormData({ ...step });
+    
+    // If it was shrunk, expand it automatically when editing
+    if (expandedCompletedSteps[step.id] === false) {
+        toggleCompletedStep(step.id);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingStepId(null);
+    setEditFormData({});
+  };
+
+  const handleSaveStep = () => {
+    if (!editingStepId) return;
+
+    onUpdateProject({
+      ...project,
+      steps: project.steps.map(s => 
+        s.id === editingStepId ? { ...s, ...editFormData } as Step : s
+      )
+    });
+    
+    setEditingStepId(null);
+    setEditFormData({});
+  };
+
+  const handleAddStep = () => {
+    const newId = `step_${Date.now()}`;
+    const newStep: Step = {
+      id: newId,
+      title: 'New Task',
+      category: 'frontend',
+      status: 'pending',
+      content: 'Describe the task requirements...',
+      history: [],
+      subSteps: []
+    };
+
+    onUpdateProject({
+      ...project,
+      steps: [...project.steps, newStep]
+    });
+
+    setEditingStepId(newId);
+    setEditFormData(newStep);
+  };
+
+  const handleDeleteStep = (stepId: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title: "Archive Task?",
+      message: "Are you sure you want to archive this task? It will be moved to the 'Decommissioned Tasks' section.",
+      isDanger: false,
+      onConfirm: () => {
+        onUpdateProject({
+          ...project,
+          steps: project.steps.map(s => s.id === stepId ? { ...s, archivedAt: Date.now() } : s)
+        });
+        setConfirmModal(null);
+      }
+    });
+  };
+
+  const handleRestoreStep = (stepId: string) => {
+    onUpdateProject({
+      ...project,
+      steps: project.steps.map(s => s.id === stepId ? { ...s, archivedAt: undefined } : s)
+    });
+  };
+
+  const handlePermanentDeleteStep = (stepId: string) => {
+     setConfirmModal({
+      isOpen: true,
+      title: "Destroy Task?",
+      message: "WARNING: This will permanently delete this task and cannot be undone.",
+      isDanger: true,
+      onConfirm: () => {
+        onUpdateProject({
+          ...project,
+          steps: project.steps.filter(s => s.id !== stepId)
+        });
+        setConfirmModal(null);
+      }
+    });
+  };
+
+  // --- Sub-Step Logic ---
+  const handlePromoteSubStep = (parentId: string, subStepIndex: number) => {
+    const updatedSteps = [...project.steps];
+    const parentIndex = updatedSteps.findIndex(s => s.id === parentId);
+    if (parentIndex === -1) return;
+
+    const parent = updatedSteps[parentIndex];
+    if (!parent.subSteps) return;
+
+    const [promotedStep] = parent.subSteps.splice(subStepIndex, 1);
+    
+    // Add to root level right after parent
+    updatedSteps.splice(parentIndex + 1, 0, promotedStep);
+
+    onUpdateProject({ ...project, steps: updatedSteps });
+  };
+
+  const handleDeleteSubStep = (parentId: string, subStepIndex: number) => {
+    setConfirmModal({
+      isOpen: true,
+      title: "Delete Sub-Task?",
+      message: "Are you sure you want to delete this sub-task?",
+      isDanger: true,
+      onConfirm: () => {
+        const updatedSteps = [...project.steps];
+        const parent = updatedSteps.find(s => s.id === parentId);
+        if (parent && parent.subSteps) {
+          parent.subSteps.splice(subStepIndex, 1);
+          onUpdateProject({ ...project, steps: updatedSteps });
+        }
+        setConfirmModal(null);
+      }
+    });
+  };
+
+  const handleUpdateSubStep = (parentId: string, subStepIndex: number, updatedSubStep: Step) => {
+    const updatedSteps = [...project.steps];
+    const parent = updatedSteps.find(s => s.id === parentId);
+    if (parent && parent.subSteps) {
+      parent.subSteps[subStepIndex] = updatedSubStep;
+      onUpdateProject({ ...project, steps: updatedSteps });
+    }
+  };
+
+  const toggleHistory = (stepId: string) => {
+    setExpandedHistory(prev => ({
+      ...prev,
+      [stepId]: !prev[stepId]
+    }));
+  };
+
+  const toggleCompletedStep = (stepId: string) => {
+    setExpandedCompletedSteps(prev => ({
+      ...prev,
+      [stepId]: !prev[stepId]
+    }));
+  };
+
+  const handleSmartCopy = async (step: Step) => {
+    const fullPrompt = `${project.systemPrompt}\n\n${step.content}`;
+    try {
+      await navigator.clipboard.writeText(fullPrompt);
+      setCopiedStepId(step.id);
+      setTimeout(() => setCopiedStepId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const updateField = (field: keyof Step, value: string) => {
+    setEditFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // --- Drag and Drop Handlers ---
+
+  const handleDragStart = (index: number) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+
+    // Determine if hovering over the card body (Nest) or edges (Reorder)
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const height = rect.height;
+
+    // If mouse is in the middle 50% of the card -> Nest
+    // If mouse is in top 25% or bottom 25% -> Gap/Reorder
+    // NOTE: Cannot nest into a SHRUNK card easily, so we disable nesting target if height is small
+    const isShrunkTarget = height < 80; 
+    
+    const threshold = 20; // pixels from edge
+    if (y < threshold || y > height - threshold || isShrunkTarget) {
+       setDragTarget({ index, type: 'gap' });
+    } else {
+       setDragTarget({ index, type: 'card' });
+    }
+  };
+
+  const handleDrop = (dropIndex: number) => {
+    if (draggedIndex === null || draggedIndex === dropIndex) return;
+
+    const updatedSteps = [...project.steps];
+    
+    if (dragTarget?.type === 'card') {
+       // NESTING LOGIC
+       const [movedStep] = updatedSteps.splice(draggedIndex, 1);
+       
+       // Adjust drop index if the splice shifted the array indices
+       let targetIdx = dropIndex;
+       if (draggedIndex < dropIndex) {
+         targetIdx--; 
+       }
+       
+       const targetStep = updatedSteps[targetIdx];
+       
+       if (targetStep) {
+         if (!targetStep.subSteps) targetStep.subSteps = [];
+         targetStep.subSteps.push(movedStep);
+       } else {
+         // Fallback: just reorder if target lost
+         updatedSteps.splice(dropIndex, 0, movedStep);
+       }
+
+    } else {
+       // REORDERING LOGIC
+       const [movedStep] = updatedSteps.splice(draggedIndex, 1);
+       updatedSteps.splice(dropIndex, 0, movedStep);
+    }
+
+    onUpdateProject({ ...project, steps: updatedSteps });
+    setDraggedIndex(null);
+    setDragTarget(null);
+  };
+
+  const ProjectIcon = FULL_ICON_MAP[project.icon || 'Terminal'] || Terminal;
+  
+  const activeSteps = project.steps.filter(s => !s.archivedAt);
+  const archivedSteps = project.steps.filter(s => s.archivedAt);
+
+  return (
+    <div className="h-screen overflow-y-auto bg-slate-50 dark:bg-neutral-950 text-slate-900 dark:text-slate-200 font-sans selection:bg-cyan-500/30">
+      <Header 
+        title={project.name} 
+        isSettingsOpen={isSettingsOpen} 
+        onToggleSettings={() => setIsSettingsOpen(!isSettingsOpen)}
+        onBack={onBack}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+        onDownload={handleDownloadProject}
+      />
+      
+      {/* Settings Panel */}
+      {isSettingsOpen && (
+        <div 
+          className="bg-white/95 dark:bg-slate-900/95 border-b border-slate-200 dark:border-slate-800 shadow-2xl backdrop-blur animate-in slide-in-from-top-2 duration-200"
+          role="region"
+          aria-label="Project Settings"
+        >
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Column 1: Identity & Config */}
+              <div className="space-y-6">
+                {/* Identity */}
+                <div className="flex items-start gap-4">
+                  <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg hidden sm:block">
+                    <Fingerprint className="text-cyan-600 dark:text-cyan-400" size={24} aria-hidden="true" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      Project Identity
+                    </h3>
+                    <div className="mb-4">
+                      <label htmlFor="proj-name-edit" className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-1 block">Project Name</label>
+                      <input 
+                        id="proj-name-edit"
+                        type="text"
+                        value={project.name}
+                        onChange={(e) => handleUpdateName(e.target.value)}
+                        className="w-full bg-white dark:bg-black/50 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-slate-900 dark:text-white font-bold focus:border-cyan-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2 block">Project Logo</label>
+                      <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label="Project Logo Selection">
+                        {activeProjectIcons.map((iconKey) => {
+                          const IconComponent = FULL_ICON_MAP[iconKey] || Terminal;
+                          const isSelected = (project.icon || 'Terminal') === iconKey;
+                          return (
+                            <button
+                              key={iconKey}
+                              role="radio"
+                              aria-checked={isSelected}
+                              onClick={() => handleUpdateIcon(iconKey)}
+                              className={`
+                                p-2 rounded flex items-center justify-center transition-all
+                                ${isSelected 
+                                  ? 'bg-cyan-600 text-white ring-2 ring-cyan-300 ring-offset-2 ring-offset-white dark:ring-offset-slate-900' 
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-white'}
+                              `}
+                              title={iconKey}
+                              aria-label={iconKey}
+                            >
+                              <IconComponent size={18} aria-hidden="true" />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Category Management */}
+                 <div className="flex items-start gap-4 border-t border-slate-200 dark:border-slate-800 pt-6">
+                  <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg hidden sm:block">
+                    <Layers className="text-rose-600 dark:text-rose-400" size={24} aria-hidden="true" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      Category Management
+                    </h3>
+                    <div className="mb-4">
+                       <div className="flex gap-2 mb-2">
+                          <input 
+                             placeholder="New Category Name..."
+                             value={newCategoryName}
+                             onChange={(e) => setNewCategoryName(e.target.value)}
+                             className="flex-1 bg-white dark:bg-black/50 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs text-slate-900 dark:text-white focus:border-cyan-500 outline-none"
+                             aria-label="New category name"
+                          />
+                          <button 
+                             onClick={handleAddCategory}
+                             disabled={!newCategoryName.trim()}
+                             className="px-3 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-cyan-600 hover:text-white disabled:opacity-50 text-slate-700 dark:text-white rounded border border-slate-300 dark:border-slate-700 text-xs font-bold uppercase transition-colors"
+                          >
+                             Add
+                          </button>
+                       </div>
+                       <div className="mb-2">
+                          <label className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-1 block">Color Theme</label>
+                          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Category Color">
+                             {AVAILABLE_COLORS.map(c => (
+                                <button 
+                                  key={c}
+                                  role="radio"
+                                  aria-checked={newCategoryColor === c}
+                                  onClick={() => setNewCategoryColor(c)}
+                                  className={`w-4 h-4 rounded-full bg-${c}-500 transition-transform hover:scale-110 ${newCategoryColor === c ? 'ring-2 ring-slate-900 dark:ring-white ring-offset-2 ring-offset-white dark:ring-offset-slate-900' : ''}`}
+                                  title={c}
+                                  aria-label={`${c} color`}
+                                />
+                             ))}
+                          </div>
+                       </div>
+                       <div className="space-y-1.5">
+                          {Object.keys(allCategories).map(key => (
+                             <div key={key} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+                                <div className="flex items-center gap-2">
+                                   <div className={`w-3 h-3 rounded-full bg-${allCategories[key].color}-500`}></div>
+                                   <span className="text-xs text-slate-700 dark:text-slate-300 capitalize">{key}</span>
+                                </div>
+                                {!BASE_CATEGORIES[key] && (
+                                   <button onClick={() => handleDeleteCategory(key)} className="text-slate-400 hover:text-rose-500" aria-label={`Delete category ${key}`}>
+                                      <X size={14} aria-hidden="true" />
+                                   </button>
+                                )}
+                             </div>
+                          ))}
+                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status Management */}
+                <div className="flex items-start gap-4 border-t border-slate-200 dark:border-slate-800 pt-6">
+                  <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg hidden sm:block">
+                    <Activity className="text-amber-500 dark:text-amber-400" size={24} aria-hidden="true" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      Status Management
+                    </h3>
+                    
+                    <div className="mb-4">
+                       {/* Inputs */}
+                       <div className="flex gap-2 mb-2">
+                          <input 
+                             placeholder="New Status..."
+                             value={newStatusName}
+                             onChange={(e) => setNewStatusName(e.target.value)}
+                             className="flex-1 bg-white dark:bg-black/50 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs text-slate-900 dark:text-white focus:border-cyan-500 outline-none"
+                             aria-label="New status name"
+                          />
+                          <button 
+                             onClick={handleAddStatus}
+                             disabled={!newStatusName.trim()}
+                             className="px-3 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-emerald-600 hover:text-white disabled:opacity-50 text-slate-700 dark:text-white rounded border border-slate-300 dark:border-slate-700 text-xs font-bold uppercase transition-colors"
+                          >
+                             Add
+                          </button>
+                       </div>
+
+                       {/* Color Picker */}
+                       <div className="mb-2">
+                          <label className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-1 block">Status Color</label>
+                          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Status Color">
+                             {AVAILABLE_COLORS.map(c => (
+                                <button 
+                                  key={c}
+                                  role="radio"
+                                  aria-checked={newStatusColor === c}
+                                  onClick={() => setNewStatusColor(c)}
+                                  className={`w-4 h-4 rounded-full bg-${c}-500 transition-transform hover:scale-110 ${newStatusColor === c ? 'ring-2 ring-slate-900 dark:ring-white ring-offset-2 ring-offset-white dark:ring-offset-slate-900' : ''}`}
+                                  title={c}
+                                  aria-label={`${c} color`}
+                                />
+                             ))}
+                          </div>
+                       </div>
+
+                       {/* Icon Picker */}
+                       <div className="mb-3">
+                          <label className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-1 block">Status Icon</label>
+                          <div className="flex flex-wrap gap-2 bg-slate-50 dark:bg-black/30 p-2 rounded border border-slate-200 dark:border-slate-800" role="radiogroup" aria-label="Status Icon">
+                             {activeStatusIcons.map(iconKey => {
+                                const IconComp = FULL_ICON_MAP[iconKey] || Circle;
+                                return (
+                                  <button 
+                                    key={iconKey}
+                                    role="radio"
+                                    aria-checked={newStatusIcon === iconKey}
+                                    onClick={() => setNewStatusIcon(iconKey)}
+                                    className={`p-1.5 rounded transition-all ${newStatusIcon === iconKey ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white' : 'text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400'}`}
+                                    aria-label={iconKey}
+                                  >
+                                    <IconComp size={16} aria-hidden="true" />
+                                  </button>
+                                )
+                             })}
+                          </div>
+                       </div>
+
+                       {/* List */}
+                       <div className="space-y-1.5">
+                          {Object.keys(allStatuses).map(key => {
+                             const s = allStatuses[key];
+                             const SIcon = FULL_ICON_MAP[s.icon] || Circle;
+                             return (
+                               <div key={key} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded">
+                                  <div className="flex items-center gap-2">
+                                     <div className={`w-2 h-2 rounded-full bg-${s.color}-500`}></div>
+                                     <SIcon size={12} className={`text-${s.color}-500`} aria-hidden="true" />
+                                     <span className="text-xs text-slate-700 dark:text-slate-300 capitalize">{s.label}</span>
+                                  </div>
+                                  {!BASE_STATUSES[key] && (
+                                     <button onClick={() => handleDeleteStatus(key)} className="text-slate-400 hover:text-rose-500" aria-label={`Delete status ${s.label}`}>
+                                        <X size={14} aria-hidden="true" />
+                                     </button>
+                                  )}
+                               </div>
+                             );
+                          })}
+                       </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Column 2: System Prompt & Danger Zone */}
+              <div className="flex flex-col gap-8">
+                <div className="flex items-start gap-4">
+                  <div className="p-3 bg-slate-100 dark:bg-slate-800 rounded-lg hidden sm:block">
+                    <Bot className="text-emerald-600 dark:text-emerald-400" size={24} aria-hidden="true" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase tracking-wider mb-2 flex items-center gap-2">
+                      Global System Prompt
+                      <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-[10px] text-slate-600 dark:text-slate-400 border border-slate-300 dark:border-slate-700">CONTEXT</span>
+                    </h3>
+                    <p className="text-xs text-slate-500 mb-4">
+                      Define the persona and high-level context for the AI.
+                    </p>
+                    <textarea
+                      value={project.systemPrompt}
+                      onChange={(e) => onUpdateProject({...project, systemPrompt: e.target.value})}
+                      className="w-full h-48 bg-white dark:bg-black/50 border border-slate-300 dark:border-slate-700 rounded-lg p-4 text-emerald-700 dark:text-emerald-400 font-mono text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none leading-relaxed shadow-inner resize-y custom-scrollbar"
+                      placeholder="Enter system prompt here..."
+                      spellCheck={false}
+                      aria-label="Global System Prompt"
+                    />
+                  </div>
+                </div>
+
+                {/* Danger Zone */}
+                <div className="flex items-start gap-4 pt-6 border-t border-slate-200 dark:border-slate-800">
+                   <div className="p-3 bg-rose-100 dark:bg-rose-950/30 rounded-lg hidden sm:block">
+                      <AlertTriangle className="text-rose-600 dark:text-rose-500" size={24} aria-hidden="true" />
+                   </div>
+                   <div className="flex-1">
+                      <h3 className="text-sm font-bold text-rose-600 dark:text-rose-500 uppercase tracking-wider mb-2">Danger Zone</h3>
+                      <div className="bg-rose-50 dark:bg-rose-950/10 border border-rose-200 dark:border-rose-900/30 rounded-lg p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                         <div>
+                            <h4 className="text-rose-800 dark:text-rose-200 font-bold text-xs uppercase">Archive Project</h4>
+                            <p className="text-rose-600 dark:text-rose-400/60 text-[10px] mt-1">
+                               Removes this project from your active dashboard. You can restore it from the archive later.
+                            </p>
+                         </div>
+                         <button 
+                           onClick={() => onDeleteProject(project.id)}
+                           className="whitespace-nowrap px-4 py-2 bg-white dark:bg-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-600 text-rose-700 dark:text-rose-300 hover:text-rose-900 dark:hover:text-white border border-rose-200 dark:border-rose-800 hover:border-rose-400 dark:hover:border-rose-500 rounded text-xs font-bold uppercase transition-colors flex items-center gap-2"
+                         >
+                           <Archive size={14} aria-hidden="true" />
+                           Archive Project
+                         </button>
+                      </div>
+                   </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      <main className="max-w-4xl mx-auto px-4 py-10 sm:px-6">
+        
+        {/* Project Info Card (Mission Brief) */}
+        <div className="mb-16 p-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-gradient-to-b dark:from-slate-900/80 dark:to-slate-900/40 shadow-2xl dark:backdrop-blur-sm relative group/info">
+          
+          <div className="flex items-center gap-4 mb-6">
+            <div className="w-12 h-12 rounded-lg bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400 shadow-sm dark:shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+               <ProjectIcon size={24} aria-hidden="true" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{project.name}</h1>
+              <span className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-widest font-mono">Project Dashboard</span>
+            </div>
+          </div>
+
+          {!isEditingDesc && (
+             <button 
+               onClick={() => setIsEditingDesc(true)}
+               className="absolute top-4 right-4 p-2 text-slate-400 hover:text-cyan-600 dark:text-slate-600 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/info:opacity-100 focus:opacity-100"
+               title="Edit Mission Brief"
+               aria-label="Edit Mission Brief"
+             >
+               <Edit2 size={16} aria-hidden="true" />
+             </button>
+          )}
+
+          {isEditingDesc ? (
+            // EDIT MODE: Description
+            <div className="flex flex-col gap-4 animate-in fade-in duration-200">
+               <div>
+                 <label htmlFor="mission-brief" className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400 font-bold mb-1 block">Mission Brief (Description)</label>
+                 <textarea 
+                    id="mission-brief"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="w-full h-24 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-slate-800 dark:text-slate-300 focus:border-cyan-500 outline-none resize-none"
+                    autoFocus
+                 />
+               </div>
+               <div className="flex justify-end gap-3">
+                 <button 
+                   onClick={handleCancelDesc}
+                   className="px-3 py-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs uppercase font-bold"
+                 >
+                   Cancel
+                 </button>
+                 <button 
+                   onClick={handleSaveDesc}
+                   className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs uppercase font-bold"
+                 >
+                   Save Brief
+                 </button>
+               </div>
+            </div>
+          ) : (
+            // VIEW MODE: Description
+            <div className="flex flex-col gap-6">
+              <div>
+                <h2 className="text-xs font-mono text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em] mb-3">Mission Brief</h2>
+                <p className="text-xl text-slate-700 dark:text-slate-100 leading-relaxed font-light">
+                  {project.description}
+                </p>
+              </div>
+              
+              <div className="mt-2">
+                 <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-xs font-mono text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em]">Active Context</h2>
+                 </div>
+                <div className="bg-slate-50 dark:bg-black/60 rounded-lg p-5 border border-slate-200 dark:border-slate-800/60 font-mono text-xs sm:text-sm text-emerald-600 dark:text-emerald-500/80 whitespace-pre-wrap shadow-inner max-h-40 overflow-y-auto custom-scrollbar">
+                  {project.systemPrompt}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Timeline Steps */}
+        <div>
+          <h2 className="text-2xl font-bold mb-10 flex items-center gap-3 text-slate-900 dark:text-white">
+            <span className="text-cyan-600 dark:text-cyan-500" aria-hidden="true">///</span> Development Timeline
+          </h2>
+          
+          <div className="space-y-0 pb-20">
+            {activeSteps.map((step, index) => {
+              const isEditing = editingStepId === step.id;
+              const displayCategory = isEditing && editFormData.category ? editFormData.category : step.category;
+              const style = allCategories[displayCategory] || allCategories.frontend || BASE_CATEGORIES.frontend;
+              const Icon = style.icon;
+              const isLast = index === activeSteps.length - 1;
+              const isCopied = copiedStepId === step.id;
+              const isDragging = draggedIndex === index;
+              const hasHistory = step.history && step.history.length > 0;
+              const isHistoryExpanded = expandedHistory[step.id];
+              const iterationCount = (step.history?.length || 0) + 1;
+              
+              // Status Resolution
+              const currentStatusKey = isEditing && editFormData.status ? editFormData.status : step.status;
+              const statusConfig = allStatuses[currentStatusKey] || allStatuses.pending;
+              const StatusIcon = FULL_ICON_MAP[statusConfig.icon] || Circle;
+
+              // Drag State Visuals
+              const isDragTargetCard = dragTarget?.index === index && dragTarget.type === 'card';
+              const isDragTargetGap = dragTarget?.index === index && dragTarget.type === 'gap';
+
+              // SHRUNK LOGIC: If completed and NOT expanded and NOT editing
+              const isCompleted = step.status === 'completed';
+              const isShrunk = isCompleted && !expandedCompletedSteps[step.id] && !isEditing;
+
+              return (
+                <div 
+                  key={step.id} 
+                  draggable={!isEditing}
+                  onDragStart={() => handleDragStart(index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDrop={() => handleDrop(index)}
+                  onDragLeave={() => setDragTarget(null)}
+                  className={`
+                    flex gap-4 sm:gap-8 relative group transition-opacity duration-200
+                    ${isDragging ? 'opacity-30 cursor-grabbing' : 'cursor-default'}
+                    ${isDragTargetGap ? 'mt-8 transition-all' : ''}
+                  `}
+                >
+                  {/* Reorder Indicator Line */}
+                  {isDragTargetGap && (
+                    <div className="absolute -top-6 left-0 right-0 h-1 bg-cyan-500/50 rounded-full animate-pulse z-20 pointer-events-none"></div>
+                  )}
+
+                  {/* Timeline Graphics */}
+                  <div className="flex flex-col items-center pt-1 relative h-full">
+                    {!isEditing && (
+                      <div 
+                        className="absolute -left-6 sm:-left-8 top-3 text-slate-400 hover:text-slate-600 dark:text-slate-700 dark:hover:text-slate-400 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity focus:opacity-100"
+                        title="Drag to reorder or nest"
+                        tabIndex={0}
+                        role="button"
+                        aria-label={`Drag handle for step ${index + 1}`}
+                      >
+                        <GripVertical size={20} aria-hidden="true" />
+                      </div>
+                    )}
+                    <div className={`
+                      relative z-10 flex-shrink-0 w-8 h-8 sm:w-12 sm:h-12 rounded-full 
+                      bg-white dark:bg-slate-900 border-2 ${step.status === 'failed' ? 'border-red-500 text-red-500' : (isShrunk ? 'border-emerald-200 dark:border-emerald-900/50 text-emerald-600 dark:text-emerald-400' : style.border)} 
+                      flex items-center justify-center shadow-lg dark:shadow-[0_0_15px_rgba(0,0,0,0.5)]
+                      ${step.status === 'failed' ? 'text-red-500' : (isShrunk ? 'text-emerald-600' : 'text-slate-400')} 
+                      font-mono font-bold text-xs sm:text-base
+                      transition-all duration-300
+                      ${isEditing ? 'ring-2 ring-offset-2 ring-offset-white dark:ring-offset-black ring-cyan-500' : ''}
+                      ${isDragTargetCard ? 'scale-110 ring-2 ring-indigo-500 border-indigo-400 bg-indigo-50 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-200' : ''}
+                    `}>
+                      {isDragTargetCard ? <CornerDownRight size={20} aria-hidden="true" /> : (step.status === 'failed' ? <AlertOctagon size={16} aria-hidden="true" /> : (isCompleted ? <Check size={18} aria-hidden="true" /> : index + 1))}
+                    </div>
+                    {/* Vertical Timeline Line - Extended if history exists */}
+                    {!isLast && (
+                       <div className={`w-0.5 flex-grow ${isShrunk ? 'bg-emerald-100 dark:bg-emerald-900/20' : 'bg-slate-200 dark:bg-slate-800 group-hover:bg-slate-300 dark:group-hover:bg-slate-700'} transition-colors my-2`} />
+                    )}
+                  </div>
+
+                  {/* Card Content Wrapper */}
+                  <div className="flex-1 mb-12 min-w-0">
+                    
+                    {/* MAIN CARD */}
+                    <div className={`
+                      relative rounded-xl border transition-all duration-300
+                      ${step.status === 'failed' ? 'border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/10' : (isShrunk ? 'bg-white dark:bg-slate-950/30 border-emerald-200 dark:border-emerald-900/30 hover:border-emerald-400/30' : `${style.border} bg-white dark:bg-slate-900/40`)} 
+                      ${isEditing ? 'bg-white dark:bg-slate-900/90 shadow-2xl ring-1 ring-cyan-500/50' : (isShrunk ? 'shadow-sm' : 'hover:bg-slate-50 dark:hover:bg-slate-900/60 hover:shadow-lg')}
+                      ${isDragTargetCard ? 'border-indigo-500 ring-2 ring-indigo-500/50' : ''}
+                      ${isShrunk ? 'p-3 sm:p-4' : 'p-6 sm:p-7'}
+                    `}>
+
+                      {/* Iteration Badge */}
+                      {iterationCount > 1 && !isEditing && !isShrunk && (
+                        <div className="absolute -top-3 right-6 flex items-center gap-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full text-[10px] font-mono shadow-sm">
+                          <GitBranch size={10} aria-hidden="true" />
+                          <span>Rev.{iterationCount}</span>
+                        </div>
+                      )}
+
+                      {isEditing ? (
+                        // --- EDIT MODE ---
+                        <div className="flex flex-col gap-5 animate-in fade-in duration-300">
+                           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
+                             <div className="flex flex-col flex-1 mr-4">
+                                <label htmlFor={`step-title-${step.id}`} className="text-[10px] uppercase tracking-widest text-cyan-600 dark:text-cyan-500 font-bold mb-1">Editing Task</label>
+                                <input 
+                                  id={`step-title-${step.id}`}
+                                  className="bg-transparent text-lg font-bold text-slate-900 dark:text-white focus:outline-none focus:border-b focus:border-cyan-500 placeholder-slate-400 dark:placeholder-slate-600 w-full"
+                                  value={editFormData.title}
+                                  onChange={(e) => updateField('title', e.target.value)}
+                                  placeholder="Step Title"
+                                  autoFocus
+                                />
+                             </div>
+                             <div className="flex gap-3">
+                               <div className="flex flex-col">
+                                 <label htmlFor={`step-cat-${step.id}`} className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-1">Category</label>
+                                 <select 
+                                    id={`step-cat-${step.id}`}
+                                    value={editFormData.category}
+                                    onChange={(e) => updateField('category', e.target.value)}
+                                    className="bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 rounded p-1.5 focus:border-cyan-500 outline-none"
+                                  >
+                                    {Object.keys(allCategories).map(key => (
+                                      <option key={key} value={key}>{key}</option>
+                                    ))}
+                                  </select>
+                               </div>
+                               <div className="flex flex-col">
+                                 <label htmlFor={`step-stat-${step.id}`} className="text-[9px] uppercase tracking-widest text-slate-500 font-bold mb-1">Status</label>
+                                 <select 
+                                    id={`step-stat-${step.id}`}
+                                    value={editFormData.status}
+                                    onChange={(e) => updateField('status', e.target.value)}
+                                    className="bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 text-xs text-slate-700 dark:text-slate-300 rounded p-1.5 focus:border-cyan-500 outline-none"
+                                  >
+                                    {(Object.values(allStatuses) as StatusConfig[]).map(s => (
+                                      <option key={s.key} value={s.key}>{s.label}</option>
+                                    ))}
+                                  </select>
+                               </div>
+                             </div>
+                           </div>
+
+                           <div>
+                             <label htmlFor={`step-details-${step.id}`} className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-2 block">Details & Requirements</label>
+                             <textarea 
+                                id={`step-details-${step.id}`}
+                                className="w-full h-64 bg-slate-50 dark:bg-black/50 border border-slate-300 dark:border-slate-700 rounded-lg p-4 text-sm text-slate-800 dark:text-slate-200 focus:border-cyan-500 outline-none font-mono resize-y custom-scrollbar"
+                                value={editFormData.content}
+                                onChange={(e) => updateField('content', e.target.value)}
+                                placeholder="Describe the step details..."
+                             />
+                           </div>
+
+                           <div className="flex justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+                             <button 
+                               onClick={handleCancelEdit}
+                               className="px-4 py-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white text-xs uppercase font-bold"
+                             >
+                               Cancel
+                             </button>
+                             <button 
+                               onClick={handleSaveStep}
+                               className="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded font-bold text-xs uppercase shadow-lg shadow-cyan-900/20 flex items-center gap-2"
+                             >
+                               <Save size={14} aria-hidden="true" />
+                               Save Changes
+                             </button>
+                           </div>
+                        </div>
+                      ) : isShrunk ? (
+                        // --- COMPACT VIEW (Shrunk) ---
+                        <div 
+                           className="flex items-center justify-between cursor-pointer group/shrunk"
+                           onClick={() => toggleCompletedStep(step.id)}
+                           role="button"
+                           tabIndex={0}
+                           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && toggleCompletedStep(step.id)}
+                           aria-expanded={false}
+                        >
+                           <div className="flex items-center gap-4">
+                              <div className={`p-1.5 rounded-lg bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900 text-emerald-600`}>
+                                 <Icon size={16} aria-hidden="true" />
+                              </div>
+                              <div>
+                                 <h3 className="text-sm font-bold text-slate-400 dark:text-slate-400 group-hover/shrunk:text-emerald-500 dark:group-hover/shrunk:text-emerald-400 transition-colors line-through decoration-slate-300 dark:decoration-slate-700">
+                                    {step.title}
+                                 </h3>
+                              </div>
+                              <div className="hidden sm:flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-900/30">
+                                 <StatusIcon size={10} aria-hidden="true" />
+                                 <span>Completed</span>
+                              </div>
+                           </div>
+                           <div className="text-slate-400 dark:text-slate-700 group-hover/shrunk:text-emerald-500 transition-colors" title="Expand Task">
+                              <Maximize2 size={16} aria-hidden="true" />
+                           </div>
+                        </div>
+                      ) : (
+                        // --- VIEW MODE (Full) ---
+                        <div className="flex flex-col h-full">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-3 mb-1">
+                                <h3 className={`text-lg font-bold ${step.status === 'failed' ? 'text-red-500 dark:text-red-400' : 'text-slate-900 dark:text-white'}`}>
+                                  {step.title}
+                                </h3>
+                                <span className={`
+                                  text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border
+                                  ${style.bg} ${style.text} ${style.badgeBorder}
+                                `}>
+                                  {step.category}
+                                </span>
+                              </div>
+                              <div className={`flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-${statusConfig.color}-600 dark:text-${statusConfig.color}-400`}>
+                                <StatusIcon size={14} aria-hidden="true" />
+                                {statusConfig.label}
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-2">
+                               {isCompleted && (
+                                  <button 
+                                    onClick={() => toggleCompletedStep(step.id)}
+                                    className="p-2 text-slate-400 dark:text-slate-600 hover:text-emerald-500 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-900 rounded transition-colors"
+                                    title="Minimize (Completed)"
+                                    aria-label="Minimize completed task"
+                                  >
+                                     <Minimize2 size={16} aria-hidden="true" />
+                                  </button>
+                               )}
+                               <div className={`p-2 rounded-lg bg-white dark:bg-slate-950 border ${style.border} ${style.text}`}>
+                                 <Icon size={20} aria-hidden="true" />
+                               </div>
+                            </div>
+                          </div>
+
+                          <div className="flex-grow">
+                            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed font-light whitespace-pre-wrap font-mono">
+                              {step.content}
+                            </p>
+                          </div>
+
+                          {/* Sub Steps Render */}
+                          {step.subSteps && step.subSteps.length > 0 && (
+                            <div className="mt-6 border-t border-slate-200 dark:border-slate-800 pt-4">
+                              <h4 className="text-[10px] uppercase tracking-widest text-slate-500 font-bold mb-3 flex items-center gap-2">
+                                <GitBranch size={12} aria-hidden="true" /> Sub-Tasks
+                              </h4>
+                              <div className="space-y-1">
+                                {step.subSteps.map((sub, subIdx) => (
+                                  <SubStepCard 
+                                    key={subIdx} 
+                                    step={sub} 
+                                    categories={allCategories}
+                                    statuses={allStatuses}
+                                    onPromote={() => handlePromoteSubStep(step.id, subIdx)}
+                                    onDelete={() => handleDeleteSubStep(step.id, subIdx)}
+                                    onUpdate={(updatedSub) => handleUpdateSubStep(step.id, subIdx, updatedSub)}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200 dark:border-slate-800/50">
+                            {/* ACTION BUTTONS */}
+                            <button 
+                              onClick={() => handleSmartCopy(step)}
+                              className={`
+                                flex items-center gap-2 px-4 py-2 rounded-lg border transition-all
+                                ${isCopied 
+                                  ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-500/50 text-emerald-600 dark:text-emerald-400' 
+                                  : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:border-cyan-300 dark:hover:border-cyan-500/50'}
+                              `}
+                              title="Smart Copy with Context"
+                            >
+                              {isCopied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+                              <span className="text-xs font-bold uppercase hidden sm:inline">
+                                {isCopied ? 'Copied' : 'Copy'}
+                              </span>
+                            </button>
+
+                            <button 
+                              onClick={() => handleEditClick(step)}
+                              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-cyan-600 transition-all shadow-sm"
+                            >
+                              <Edit2 size={16} aria-hidden="true" />
+                              <span className="text-xs font-bold uppercase hidden sm:inline">Edit</span>
+                            </button>
+
+                            <button 
+                              onClick={() => handleDeleteStep(step.id)}
+                              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all border border-transparent hover:border-rose-200 dark:hover:border-rose-900/30"
+                              title="Archive Step"
+                              aria-label="Archive Step"
+                            >
+                              <Archive size={16} aria-hidden="true" />
+                              <span className="text-xs font-bold uppercase hidden sm:inline">Archive</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* HISTORY BRANCHES */}
+                    {hasHistory && !isShrunk && (
+                      <div className="mt-2">
+                         <button 
+                           onClick={() => toggleHistory(step.id)}
+                           className="flex items-center gap-2 text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 ml-8 mb-2 transition-colors"
+                           aria-expanded={isHistoryExpanded}
+                         >
+                           {isHistoryExpanded ? <ChevronUp size={12} aria-hidden="true" /> : <ChevronDown size={12} aria-hidden="true" />}
+                           {isHistoryExpanded ? 'Hide History' : `Show ${step.history!.length} Archived Attempts`}
+                         </button>
+                         
+                         {isHistoryExpanded && (
+                           <div className="flex flex-col gap-1 ml-2 animate-in slide-in-from-top-2">
+                             {step.history!.map((ver, hIdx) => (
+                               <HistoryItem key={ver.id} version={ver} index={hIdx} />
+                             ))}
+                           </div>
+                         )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ARCHIVED TASKS SECTION */}
+          <div className="mb-24 border-t border-slate-200 dark:border-slate-800 pt-8">
+             <button 
+               onClick={() => setIsArchiveOpen(!isArchiveOpen)}
+               className="flex items-center gap-2 text-sm font-bold uppercase tracking-wider text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+               aria-expanded={isArchiveOpen}
+             >
+               {isArchiveOpen ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+               Decommissioned Tasks (Archive)
+               <span className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs py-0.5 px-2 rounded-full">{archivedSteps.length}</span>
+             </button>
+
+             {isArchiveOpen && (
+                <div className="mt-6 space-y-3 animate-in slide-in-from-top-2">
+                   {archivedSteps.length === 0 ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-600 font-mono pl-6">No archived tasks found.</p>
+                   ) : (
+                      archivedSteps.map(step => (
+                         <div key={step.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-800 rounded-lg hover:bg-white dark:hover:bg-slate-900/50 transition-colors">
+                            <div className="flex items-center gap-4">
+                               <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-500">
+                                  <Archive size={14} aria-hidden="true" />
+                               </div>
+                               <div>
+                                  <h4 className="text-sm font-bold text-slate-400 dark:text-slate-400 line-through decoration-slate-400 dark:decoration-slate-600">{step.title}</h4>
+                                  <p className="text-[10px] text-slate-500 dark:text-slate-600 font-mono">
+                                     Archived: {step.archivedAt ? new Date(step.archivedAt).toLocaleString() : 'Unknown'}
+                                  </p>
+                               </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                               <button 
+                                 onClick={() => handleRestoreStep(step.id)}
+                                 className="p-2 text-emerald-600 hover:text-emerald-500 dark:hover:text-emerald-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
+                                 title="Restore Task"
+                                 aria-label="Restore task"
+                               >
+                                  <RefreshCw size={16} aria-hidden="true" />
+                               </button>
+                               <button 
+                                 onClick={() => handlePermanentDeleteStep(step.id)}
+                                 className="p-2 text-rose-600 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
+                                 title="Delete Permanently"
+                                 aria-label="Delete task permanently"
+                               >
+                                  <Trash2 size={16} aria-hidden="true" />
+                               </button>
+                            </div>
+                         </div>
+                      ))
+                   )}
+                </div>
+             )}
+          </div>
+
+          {/* ADD STEP BUTTON */}
+          <div className="fixed bottom-8 right-8 z-30">
+            <button 
+              onClick={handleAddStep}
+              className="group flex items-center justify-center w-14 h-14 bg-cyan-600 text-white rounded-full shadow-xl shadow-cyan-900/30 dark:shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:bg-cyan-500 hover:scale-110 transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-cyan-400/50"
+              title="Add New Task"
+              aria-label="Add new task"
+            >
+              <Plus size={28} className="group-hover:rotate-90 transition-transform duration-300" aria-hidden="true" />
+            </button>
+          </div>
+
+        </div>
+      </main>
+
+      {/* Local Confirmation Modal */}
+      {confirmModal && (
+        <ConfirmModal 
+          isOpen={confirmModal.isOpen}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          isDanger={confirmModal.isDanger}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={() => setConfirmModal(null)}
+        />
+      )}
+    </div>
+  );
+};
+
+export default ProjectDetail;

@@ -1,0 +1,5 @@
+{
+  "name": "GalagaV",
+  "description": "A classic arcade space shooter clone featuring high scores, custom pilot profiles, and AI-powered callsign generation.",
+  "requestFramePermissions": []
+}
