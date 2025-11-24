@@ -95,6 +95,7 @@ export interface Step {
   history?: StepVersion[];
   subSteps?: Step[]; // Nested tasks / sub-cards
   archivedAt?: number; // Timestamp if soft-deleted/archived
+  notes?: string; // Quick scratchpad notes
 }
 
 export interface Project {

@@ -8,7 +8,7 @@ import {
   Edit2, Save, Plus, Trash2, Bot, Copy, Check, GripVertical, X, Fingerprint, Terminal,
   AlertOctagon, ChevronDown, ChevronRight, GitBranch, MoveUp, Minimize2, Maximize2, CornerDownRight,
   ChevronUp, Tag, Layers, Play, Pause, Flag, Archive, Bookmark, Zap, AlertTriangle, Activity,
-  RefreshCw, FileWarning
+  RefreshCw, FileWarning, StickyNote
 } from 'lucide-react';
 
 // --- Constants ---
@@ -435,6 +435,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
   const [editFormData, setEditFormData] = useState<Partial<Step>>({});
   const [copiedStepId, setCopiedStepId] = useState<string | null>(null);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   
   // Local Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState<ConfirmState | null>(null);
@@ -772,6 +773,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
 
   const updateField = (field: keyof Step, value: string) => {
     setEditFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleUpdateNote = (stepId: string, note: string) => {
+    onUpdateProject({
+      ...project,
+      steps: project.steps.map(s => s.id === stepId ? { ...s, notes: note } : s)
+    });
   };
 
   // --- Drag and Drop Handlers (Main Tasks) ---
@@ -1560,41 +1568,74 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                             </div>
                           )}
 
-                          <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-slate-200 dark:border-slate-800/50">
+                          <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-200 dark:border-slate-800/50">
+                            
+                            {/* NOTE TOGGLE & POPOVER */}
+                            <div className="relative">
+                                <button 
+                                    onClick={() => setActiveNoteId(activeNoteId === step.id ? null : step.id)}
+                                    className={`p-2 rounded-lg transition-colors ${step.notes ? 'text-amber-500 hover:text-amber-600 bg-amber-50 dark:bg-amber-900/20' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                                    title="Quick Note"
+                                >
+                                    <StickyNote size={18} />
+                                    {step.notes && <span className="absolute top-1 right-1 w-2 h-2 bg-amber-500 rounded-full border-2 border-white dark:border-slate-900"></span>}
+                                </button>
+
+                                {activeNoteId === step.id && (
+                                    <>
+                                        <div className="fixed inset-0 z-40" onClick={() => setActiveNoteId(null)}></div>
+                                        <div className="absolute bottom-full left-0 mb-2 w-64 sm:w-72 bg-amber-50 dark:bg-slate-800 border border-amber-200 dark:border-slate-700 rounded-lg shadow-xl z-50 p-3 animate-in fade-in zoom-in-95 duration-200">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-[10px] uppercase font-bold text-amber-600 dark:text-amber-500 tracking-wider">Quick Note</span>
+                                            </div>
+                                            <textarea 
+                                                className="w-full h-32 bg-transparent border-0 focus:ring-0 p-0 text-sm text-slate-700 dark:text-slate-300 font-mono resize-none leading-relaxed placeholder-slate-400 dark:placeholder-slate-600"
+                                                placeholder="Add a note..."
+                                                value={step.notes || ''}
+                                                onChange={(e) => handleUpdateNote(step.id, e.target.value)}
+                                                autoFocus
+                                            />
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
                             {/* ACTION BUTTONS */}
-                            <button 
-                              onClick={() => handleSmartCopy(step)}
-                              className={`
-                                flex items-center gap-2 px-4 py-2 rounded-lg border transition-all
-                                ${isCopied 
-                                  ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-500/50 text-emerald-600 dark:text-emerald-400' 
-                                  : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:border-cyan-300 dark:hover:border-cyan-500/50'}
-                              `}
-                              title="Smart Copy with Context"
-                            >
-                              {isCopied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
-                              <span className="text-xs font-bold uppercase hidden sm:inline">
-                                {isCopied ? 'Copied' : 'Copy'}
-                              </span>
-                            </button>
+                            <div className="flex items-center gap-3">
+                              <button 
+                                onClick={() => handleSmartCopy(step)}
+                                className={`
+                                  flex items-center gap-2 px-4 py-2 rounded-lg border transition-all
+                                  ${isCopied 
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-500/50 text-emerald-600 dark:text-emerald-400' 
+                                    : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 hover:border-cyan-300 dark:hover:border-cyan-500/50'}
+                                `}
+                                title="Smart Copy with Context"
+                              >
+                                {isCopied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
+                                <span className="text-xs font-bold uppercase hidden sm:inline">
+                                  {isCopied ? 'Copied' : 'Copy'}
+                                </span>
+                              </button>
 
-                            <button 
-                              onClick={() => handleEditClick(step)}
-                              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-cyan-600 transition-all shadow-sm"
-                            >
-                              <Edit2 size={16} aria-hidden="true" />
-                              <span className="text-xs font-bold uppercase hidden sm:inline">Edit</span>
-                            </button>
+                              <button 
+                                onClick={() => handleEditClick(step)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-cyan-600 transition-all shadow-sm"
+                              >
+                                <Edit2 size={16} aria-hidden="true" />
+                                <span className="text-xs font-bold uppercase hidden sm:inline">Edit</span>
+                              </button>
 
-                            <button 
-                              onClick={() => handleDeleteStep(step.id)}
-                              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all border border-transparent hover:border-rose-200 dark:hover:border-rose-900/30"
-                              title="Archive Step"
-                              aria-label="Archive Step"
-                            >
-                              <Archive size={16} aria-hidden="true" />
-                              <span className="text-xs font-bold uppercase hidden sm:inline">Archive</span>
-                            </button>
+                              <button 
+                                onClick={() => handleDeleteStep(step.id)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all border border-transparent hover:border-rose-200 dark:hover:border-rose-900/30"
+                                title="Archive Step"
+                                aria-label="Archive Step"
+                              >
+                                <Archive size={16} aria-hidden="true" />
+                                <span className="text-xs font-bold uppercase hidden sm:inline">Archive</span>
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}
