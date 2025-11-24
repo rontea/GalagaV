@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = process.env.API_KEY;
+const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
 let ai: GoogleGenAI | null = null;
 
 if (apiKey) {

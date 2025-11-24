@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    font-family: 'Orbitron', sans-serif;
+    @apply bg-slate-50 text-slate-900 overflow-hidden;
+  }
+
+  .dark body {
+    @apply bg-[#050505] text-white;
+  }
+}
+
+.font-arcade {
+  font-family: 'Press Start 2P', cursive;
+}
+
+/* CRT Effect Scanlines - Only visible in dark mode */
+.scanlines {
+  display: none;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.dark .scanlines {
+  display: block;
+  background: linear-gradient(
+    to bottom,
+    rgba(255,255,255,0),
+    rgba(255,255,255,0) 50%,
+    rgba(0,0,0,0.2) 50%,
+    rgba(0,0,0,0.2)
+  );
+  background-size: 100% 4px;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+}
+
+/* Custom Scrollbar - Light Mode Defaults */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9; 
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1; 
+  border-radius: 5px;
+  border: 2px solid #f1f5f9;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #06b6d4; 
+}
+
+/* Dark Mode Scrollbar Overrides */
+.dark ::-webkit-scrollbar-track {
+  background: #020617; 
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #1e293b; 
+  border: 2px solid #020617;
+}
+
+/* Utility for inner content areas */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155;
+}

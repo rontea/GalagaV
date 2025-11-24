@@ -4,13 +4,16 @@ import { getAuth, Auth } from 'firebase/auth';
 
 // NOTE: In a real environment, these would be populated by process.env variables.
 // For the purpose of this generated code, we check if keys exist to avoid crashing.
+// We also check if 'process' exists to support pure browser previews.
+const env = typeof process !== 'undefined' ? process.env : {};
+
 const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY || "demo-key",
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "demo.firebaseapp.com",
-  projectId: process.env.FIREBASE_PROJECT_ID || "demo-project",
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "demo.appspot.com",
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "123456789",
-  appId: process.env.FIREBASE_APP_ID || "1:123456789:web:abcdef"
+  apiKey: env.FIREBASE_API_KEY || "demo-key",
+  authDomain: env.FIREBASE_AUTH_DOMAIN || "demo.firebaseapp.com",
+  projectId: env.FIREBASE_PROJECT_ID || "demo-project",
+  storageBucket: env.FIREBASE_STORAGE_BUCKET || "demo.appspot.com",
+  messagingSenderId: env.FIREBASE_MESSAGING_SENDER_ID || "123456789",
+  appId: env.FIREBASE_APP_ID || "1:123456789:web:abcdef"
 };
 
 let app: FirebaseApp;
