@@ -133,15 +133,29 @@ const HistoryItem: React.FC<{ version: StepVersion; index: number }> = ({ versio
 // --- Sub Card Component ---
 const SubStepCard: React.FC<{ 
   step: Step; 
+  index: number;
+  parentId: string;
   categories: Record<string, CategoryStyle>;
   statuses: Record<string, StatusConfig>;
   onPromote: () => void;
   onDelete: () => void;
   onUpdate: (step: Step) => void;
-}> = ({ step, categories, statuses, onPromote, onDelete, onUpdate }) => {
+  // Drag Props
+  onDragStart: (e: React.DragEvent, parentId: string, index: number) => void;
+  onDragOver: (e: React.DragEvent, parentId: string, index: number) => void;
+  onDrop: (e: React.DragEvent, parentId: string, index: number) => void;
+  onDragEnd: () => void;
+  isDragging: boolean;
+  isDragTarget: boolean;
+}> = ({ 
+  step, index, parentId, categories, statuses, 
+  onPromote, onDelete, onUpdate, 
+  onDragStart, onDragOver, onDrop, onDragEnd, isDragging, isDragTarget 
+}) => {
   const [expanded, setExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<Step>(step);
+  const [isCopied, setIsCopied] = useState(false);
 
   useEffect(() => {
     setFormData(step);
@@ -159,7 +173,9 @@ const SubStepCard: React.FC<{
   };
 
   const handleSave = () => {
-    onUpdate(formData);
+    const finalData = { ...formData };
+    if (!finalData.title.trim()) finalData.title = "Untitled Sub-Task";
+    onUpdate(finalData);
     setIsEditing(false);
   };
 
@@ -168,8 +184,30 @@ const SubStepCard: React.FC<{
     setIsEditing(false);
   };
 
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(step.content);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy sub-task content:', err);
+    }
+  };
+
   return (
-    <div className="relative pl-8 mb-3 group">
+    <div 
+      className={`relative pl-8 mb-3 group ${isDragging ? 'opacity-40' : ''}`}
+      draggable={!isEditing}
+      onDragStart={(e) => onDragStart(e, parentId, index)}
+      onDragOver={(e) => onDragOver(e, parentId, index)}
+      onDrop={(e) => onDrop(e, parentId, index)}
+      onDragEnd={onDragEnd}
+    >
+      {/* Insertion Indicator */}
+      {isDragTarget && (
+         <div className="absolute top-0 left-8 right-0 h-0.5 bg-cyan-500 z-20 shadow-[0_0_8px_rgba(6,182,212,0.8)]"></div>
+      )}
+
       {/* Connector Line */}
       <div className="absolute left-0 top-0 h-full w-px bg-slate-300 dark:bg-slate-800 group-hover:bg-slate-400 dark:group-hover:bg-slate-700 transition-colors"></div>
       <div className="absolute left-0 top-6 w-6 h-px bg-slate-300 dark:bg-slate-800 group-hover:bg-slate-400 dark:group-hover:bg-slate-700 transition-colors"></div>
@@ -255,7 +293,11 @@ const SubStepCard: React.FC<{
           </div>
         ) : (
           // --- VIEW MODE ---
-          <div className="flex items-center justify-between p-3">
+          <div className="flex items-center justify-between p-3 gap-2">
+            <div className="flex-shrink-0 cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 dark:text-slate-700 dark:hover:text-slate-500 p-1">
+               <GripVertical size={14} aria-hidden="true" />
+            </div>
+            
             <div 
                className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer"
                role="button"
@@ -264,32 +306,44 @@ const SubStepCard: React.FC<{
                onClick={() => setExpanded(!expanded)}
                aria-expanded={expanded}
             >
-                <div className={`p-1.5 rounded ${style.bg} ${style.text}`}>
+                {/* Number Badge */}
+                <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400">
+                   #{index + 1}
+                </div>
+
+                <div className={`flex-shrink-0 p-1.5 rounded ${style.bg} ${style.text}`}>
                   <Icon size={14} aria-hidden="true" />
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <h4 className={`text-sm font-bold truncate ${expanded ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>{step.title}</h4>
-                    <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded border ${style.border} ${style.text} bg-slate-50 dark:bg-slate-950/30`}>
-                      {step.category}
-                    </span>
+                
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className={`text-sm font-bold truncate ${expanded ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>
+                        {step.title}
+                    </h4>
                     
-                    <div className={`flex items-center gap-1 text-${statusConfig.color}-600 dark:text-${statusConfig.color}-400`}>
-                      <StatusIcon size={12} aria-hidden="true" />
+                    <div className="flex items-center gap-2 ml-auto sm:ml-2">
+                        <span className={`text-[9px] uppercase px-1.5 py-0.5 rounded border ${style.border} ${style.text} bg-slate-50 dark:bg-slate-950/30 whitespace-nowrap`}>
+                        {step.category}
+                        </span>
+                        
+                        <div className={`flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-50 dark:bg-slate-950/30 border border-slate-100 dark:border-slate-800 text-${statusConfig.color}-600 dark:text-${statusConfig.color}-400 whitespace-nowrap`}>
+                           <StatusIcon size={10} aria-hidden="true" />
+                           <span className="text-[9px] uppercase font-bold">{statusConfig.label}</span>
+                        </div>
                     </div>
                   </div>
                   {!expanded && (
-                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono max-w-[200px]">
-                      {step.content.substring(0, 30)}...
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate font-mono mt-1 opacity-90">
+                      {step.content.substring(0, 50)}{step.content.length > 50 ? '...' : ''}
                     </p>
                   )}
                 </div>
             </div>
 
-             <div className="flex items-center gap-2 ml-2">
+             <div className="flex items-center gap-1 flex-shrink-0 ml-2">
                 <button 
                   onClick={(e) => { e.stopPropagation(); onPromote(); }}
-                  className="p-1 text-slate-400 hover:text-cyan-600 dark:text-slate-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  className="p-1.5 text-slate-400 hover:text-cyan-600 dark:text-slate-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
                   title="Promote to Main Timeline"
                   aria-label={`Promote sub-task ${step.title}`}
                 >
@@ -297,7 +351,7 @@ const SubStepCard: React.FC<{
                 </button>
                 <button 
                   onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-                  className="p-1 text-slate-400 hover:text-cyan-600 dark:text-slate-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-500"
+                  className="p-1.5 text-slate-400 hover:text-cyan-600 dark:text-slate-600 dark:hover:text-cyan-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors"
                   title={expanded ? "Collapse" : "Expand"}
                   aria-label={expanded ? "Collapse sub-task" : "Expand sub-task"}
                 >
@@ -311,19 +365,26 @@ const SubStepCard: React.FC<{
         {!isEditing && expanded && (
             <div className="px-3 pb-3 pt-0 animate-in fade-in slide-in-from-top-1">
             <div className="border-t border-slate-200 dark:border-slate-800/50 pt-3 mt-1">
-                <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap font-light leading-relaxed mb-3">
+                <p className="text-xs text-slate-700 dark:text-slate-300 whitespace-pre-wrap font-light leading-relaxed mb-3 pl-1">
                 {step.content}
                 </p>
                 <div className="flex justify-end gap-2 border-t border-slate-200 dark:border-slate-800/30 pt-2">
                     <button 
-                    onClick={() => setIsEditing(true)}
-                    className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-cyan-600 dark:text-slate-400 dark:hover:text-cyan-400 uppercase font-bold px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                      onClick={handleCopy}
+                      className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-cyan-600 dark:text-slate-400 dark:hover:text-cyan-400 uppercase font-bold px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      {isCopied ? <Check size={10} aria-hidden="true" /> : <Copy size={10} aria-hidden="true" />}
+                      {isCopied ? 'Copied' : 'Copy'}
+                    </button>
+                    <button 
+                      onClick={() => setIsEditing(true)}
+                      className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-cyan-600 dark:text-slate-400 dark:hover:text-cyan-400 uppercase font-bold px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     >
                     <Edit2 size={10} aria-hidden="true" /> Edit
                     </button>
                     <button 
-                    onClick={() => onDelete()}
-                    className="flex items-center gap-1 text-[10px] text-rose-700 hover:text-rose-500 dark:text-rose-900 dark:hover:text-rose-500 uppercase font-bold px-2 py-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                      onClick={() => onDelete()}
+                      className="flex items-center gap-1 text-[10px] text-rose-700 hover:text-rose-500 dark:text-rose-900 dark:hover:text-rose-500 uppercase font-bold px-2 py-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
                     >
                     <Trash2 size={10} aria-hidden="true" /> Delete
                     </button>
@@ -396,9 +457,13 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
   // Project Info Editing State
   const [description, setDescription] = useState(project.description);
 
-  // Drag and Drop State
+  // Drag and Drop State (Main Tasks)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragTarget, setDragTarget] = useState<{ index: number; type: 'gap' | 'card' } | null>(null);
+
+  // Drag and Drop State (Sub Tasks)
+  const [draggedSubTask, setDraggedSubTask] = useState<{ parentId: string; index: number } | null>(null);
+  const [dragTargetSubTask, setDragTargetSubTask] = useState<{ parentId: string; index: number } | null>(null);
 
   // Computed Categories
   const allCategories = useMemo(() => {
@@ -559,10 +624,16 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
   const handleSaveStep = () => {
     if (!editingStepId) return;
 
+    const finalData = { ...editFormData };
+    // Fallback if user saves empty title
+    if (!finalData.title || !finalData.title.trim()) {
+      finalData.title = "Untitled Task";
+    }
+
     onUpdateProject({
       ...project,
       steps: project.steps.map(s => 
-        s.id === editingStepId ? { ...s, ...editFormData } as Step : s
+        s.id === editingStepId ? { ...s, ...finalData } as Step : s
       )
     });
     
@@ -574,7 +645,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     const newId = `step_${Date.now()}`;
     const newStep: Step = {
       id: newId,
-      title: 'New Task',
+      title: '', // Empty default so placeholder shows and user can type immediately
       category: 'frontend',
       status: 'pending',
       content: 'Describe the task requirements...',
@@ -703,27 +774,28 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     setEditFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  // --- Drag and Drop Handlers ---
+  // --- Drag and Drop Handlers (Main Tasks) ---
 
   const handleDragStart = (index: number) => {
     setDraggedIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragTarget(null);
   };
 
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
     if (draggedIndex === null || draggedIndex === index) return;
 
-    // Determine if hovering over the card body (Nest) or edges (Reorder)
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const y = e.clientY - rect.top;
     const height = rect.height;
 
-    // If mouse is in the middle 50% of the card -> Nest
-    // If mouse is in top 25% or bottom 25% -> Gap/Reorder
-    // NOTE: Cannot nest into a SHRUNK card easily, so we disable nesting target if height is small
     const isShrunkTarget = height < 80; 
     
-    const threshold = 20; // pixels from edge
+    const threshold = 20; 
     if (y < threshold || y > height - threshold || isShrunkTarget) {
        setDragTarget({ index, type: 'gap' });
     } else {
@@ -740,7 +812,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
        // NESTING LOGIC
        const [movedStep] = updatedSteps.splice(draggedIndex, 1);
        
-       // Adjust drop index if the splice shifted the array indices
        let targetIdx = dropIndex;
        if (draggedIndex < dropIndex) {
          targetIdx--; 
@@ -752,7 +823,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
          if (!targetStep.subSteps) targetStep.subSteps = [];
          targetStep.subSteps.push(movedStep);
        } else {
-         // Fallback: just reorder if target lost
          updatedSteps.splice(dropIndex, 0, movedStep);
        }
 
@@ -765,6 +835,73 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     onUpdateProject({ ...project, steps: updatedSteps });
     setDraggedIndex(null);
     setDragTarget(null);
+  };
+
+  // --- Drag and Drop Handlers (Sub Tasks) ---
+  const handleSubTaskDragStart = (e: React.DragEvent, parentId: string, index: number) => {
+    e.stopPropagation();
+    setDraggedSubTask({ parentId, index });
+  };
+
+  const handleSubTaskDragOver = (e: React.DragEvent, parentId: string, index: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (draggedSubTask) {
+       // Allow dropping even if same parent/index to enable simple visual feedback, 
+       // but logic will prevent no-op
+       setDragTargetSubTask({ parentId, index });
+    }
+  };
+
+  const handleSubTaskDrop = (e: React.DragEvent, targetParentId: string, targetIndex: number) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!draggedSubTask) return;
+    
+    const { parentId: sourceParentId, index: sourceIndex } = draggedSubTask;
+    
+    // Copy steps
+    const updatedSteps = [...project.steps];
+    
+    // Find source parent
+    const sourceParent = updatedSteps.find(s => s.id === sourceParentId);
+    if (!sourceParent || !sourceParent.subSteps) return;
+    
+    // Remove item from source
+    const [movedItem] = sourceParent.subSteps.splice(sourceIndex, 1);
+    
+    let finalTargetIndex = targetIndex;
+    
+    // If moving within the same parent
+    if (sourceParentId === targetParentId) {
+         // If moving down in the same list, the splice above shifted subsequent items up
+         // So if we are dropping at an index that was originally higher than source, we need to adjust
+         if (sourceIndex < targetIndex) {
+             finalTargetIndex--; // Decrement because the target shifted up by 1
+         }
+         // Ensure bounds
+         if (finalTargetIndex < 0) finalTargetIndex = 0;
+         if (finalTargetIndex > sourceParent.subSteps.length) finalTargetIndex = sourceParent.subSteps.length;
+         
+         sourceParent.subSteps.splice(finalTargetIndex, 0, movedItem);
+    } else {
+         // Moving to a different parent
+         const targetParent = updatedSteps.find(s => s.id === targetParentId);
+         if (targetParent) {
+             if (!targetParent.subSteps) targetParent.subSteps = [];
+             targetParent.subSteps.splice(finalTargetIndex, 0, movedItem);
+         }
+    }
+    
+    onUpdateProject({ ...project, steps: updatedSteps });
+    setDraggedSubTask(null);
+    setDragTargetSubTask(null);
+  };
+
+  const handleSubTaskDragEnd = () => {
+    setDraggedSubTask(null);
+    setDragTargetSubTask(null);
   };
 
   const ProjectIcon = FULL_ICON_MAP[project.icon || 'Terminal'] || Terminal;
@@ -1171,6 +1308,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                   key={step.id} 
                   draggable={!isEditing}
                   onDragStart={() => handleDragStart(index)}
+                  onDragEnd={handleDragEnd}
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDrop={() => handleDrop(index)}
                   onDragLeave={() => setDragTarget(null)}
@@ -1341,10 +1479,21 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                         <div className="flex flex-col h-full">
                           <div className="flex items-start justify-between mb-4">
                             <div className="flex flex-col">
-                              <div className="flex items-center gap-3 mb-1">
-                                <h3 className={`text-lg font-bold ${step.status === 'failed' ? 'text-red-500 dark:text-red-400' : 'text-slate-900 dark:text-white'}`}>
-                                  {step.title}
+                              <div className="flex items-center gap-3 mb-1 group/title">
+                                <h3 
+                                  className={`text-lg font-bold ${step.status === 'failed' ? 'text-red-500 dark:text-red-400' : 'text-slate-900 dark:text-white'} cursor-pointer hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors`}
+                                  onClick={() => handleEditClick(step)}
+                                  title="Click to Edit"
+                                >
+                                  {step.title || <span className="text-slate-400 italic">Untitled Task</span>}
                                 </h3>
+                                <button 
+                                  onClick={() => handleEditClick(step)}
+                                  className="opacity-0 group-hover/title:opacity-100 text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 transition-opacity"
+                                  aria-label="Edit title"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
                                 <span className={`
                                   text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border
                                   ${style.bg} ${style.text} ${style.badgeBorder}
@@ -1390,12 +1539,21 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                                 {step.subSteps.map((sub, subIdx) => (
                                   <SubStepCard 
                                     key={subIdx} 
-                                    step={sub} 
+                                    step={sub}
+                                    index={subIdx}
+                                    parentId={step.id} 
                                     categories={allCategories}
                                     statuses={allStatuses}
                                     onPromote={() => handlePromoteSubStep(step.id, subIdx)}
                                     onDelete={() => handleDeleteSubStep(step.id, subIdx)}
                                     onUpdate={(updatedSub) => handleUpdateSubStep(step.id, subIdx, updatedSub)}
+                                    // Drag Props
+                                    isDragging={draggedSubTask?.parentId === step.id && draggedSubTask?.index === subIdx}
+                                    isDragTarget={dragTargetSubTask?.parentId === step.id && dragTargetSubTask?.index === subIdx}
+                                    onDragStart={handleSubTaskDragStart}
+                                    onDragOver={handleSubTaskDragOver}
+                                    onDrop={handleSubTaskDrop}
+                                    onDragEnd={handleSubTaskDragEnd}
                                   />
                                 ))}
                               </div>
