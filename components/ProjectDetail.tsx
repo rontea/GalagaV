@@ -8,7 +8,7 @@ import {
   Edit2, Save, Plus, Trash2, Bot, Copy, Check, GripVertical, X, Fingerprint, Terminal,
   AlertOctagon, ChevronDown, ChevronRight, GitBranch, MoveUp, Minimize2, Maximize2, CornerDownRight,
   ChevronUp, Tag, Layers, Play, Pause, Flag, Archive, Bookmark, Zap, AlertTriangle, Activity,
-  RefreshCw, FileWarning, StickyNote
+  RefreshCw, FileWarning, StickyNote, Files
 } from 'lucide-react';
 
 // --- Constants ---
@@ -168,6 +168,10 @@ const SubStepCard: React.FC<{
   const statusConfig = statuses[step.status] || statuses.pending;
   const StatusIcon = FULL_ICON_MAP[statusConfig.icon] || Circle;
 
+  // Compact Logic
+  const isCompleted = step.status === 'completed';
+  const showCompact = isCompleted && !expanded && !isEditing;
+
   const updateField = (field: keyof Step, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -216,6 +220,7 @@ const SubStepCard: React.FC<{
         border rounded-lg bg-white dark:bg-slate-900/60 transition-all duration-200
         ${expanded || isEditing ? 'border-slate-300 dark:border-slate-700 shadow-xl' : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-600'}
         ${isEditing ? 'ring-1 ring-cyan-500/30' : ''}
+        ${showCompact ? 'border-emerald-200 dark:border-emerald-900/30 hover:border-emerald-400/30' : ''}
       `}>
         {isEditing ? (
           // --- EDIT MODE ---
@@ -289,6 +294,35 @@ const SubStepCard: React.FC<{
                      Save Changes
                    </button>
                 </div>
+             </div>
+          </div>
+        ) : showCompact ? (
+          // --- COMPACT COMPLETED VIEW ---
+          <div 
+             className="flex items-center justify-between p-3 gap-2 cursor-pointer group/subcompact"
+             onClick={() => setExpanded(true)}
+             role="button"
+             tabIndex={0}
+             onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setExpanded(true)}
+             title="Click to expand"
+          >
+             <div className="flex items-center gap-3">
+                 <div className="flex-shrink-0 cursor-grab active:cursor-grabbing text-slate-300 dark:text-slate-700">
+                    <GripVertical size={14} aria-hidden="true" />
+                 </div>
+                 <div className="p-1 rounded bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900">
+                    <Check size={12} aria-hidden="true" />
+                 </div>
+                 <span className="text-sm font-bold text-slate-400 dark:text-slate-500 line-through decoration-slate-300 dark:decoration-slate-600">
+                    {step.title}
+                 </span>
+                 <div className="hidden sm:inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-900/30">
+                    <StatusIcon size={10} aria-hidden="true" />
+                    <span>Completed</span>
+                 </div>
+             </div>
+             <div className="text-slate-300 group-hover/subcompact:text-emerald-500 transition-colors">
+                <Maximize2 size={14} aria-hidden="true" />
              </div>
           </div>
         ) : (
@@ -676,6 +710,33 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
         });
         setConfirmModal(null);
       }
+    });
+  };
+
+  const handleDuplicateStep = (stepId: string) => {
+    const stepIndex = project.steps.findIndex(s => s.id === stepId);
+    if (stepIndex === -1) return;
+
+    const originalStep = project.steps[stepIndex];
+    const timestamp = Date.now();
+
+    const newStep: Step = {
+        ...originalStep,
+        id: `step_${timestamp}`,
+        title: `${originalStep.title} (Copy)`,
+        history: [], // Reset history
+        subSteps: originalStep.subSteps?.map((sub, idx) => ({
+            ...sub,
+            id: `step_${timestamp}_sub_${idx}`
+        })) || []
+    };
+
+    const updatedSteps = [...project.steps];
+    updatedSteps.splice(stepIndex + 1, 0, newStep);
+
+    onUpdateProject({
+        ...project,
+        steps: updatedSteps
     });
   };
 
@@ -1616,6 +1677,15 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                                 <span className="text-xs font-bold uppercase hidden sm:inline">
                                   {isCopied ? 'Copied' : 'Copy'}
                                 </span>
+                              </button>
+
+                              <button 
+                                onClick={() => handleDuplicateStep(step.id)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-all border border-transparent hover:border-indigo-200 dark:hover:border-indigo-900/30"
+                                title="Duplicate Task"
+                              >
+                                <Files size={16} aria-hidden="true" />
+                                <span className="text-xs font-bold uppercase hidden sm:inline">Duplicate</span>
                               </button>
 
                               <button 
