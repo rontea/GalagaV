@@ -73,23 +73,23 @@ export default defineConfig({
 
 ---
 
-## ❓ Troubleshooting / Not Working?
+## ❓ Troubleshooting
 
-If you run `npm run dev` and it's not working, check the following:
+If you run `npm run dev` and encounter issues, check the following:
 
 **1. "command not found"**
 *   Ensure Node.js is installed. Type `node -v` in your terminal. It should print a version number (e.g., `v18.x.x`).
 
 **2. White Screen / Blank Page**
 *   Check the browser console (F12 -> Console).
-*   If you see errors about "imports", ensure you ran `npm install`.
+*   If you see errors about missing modules, ensure you ran `npm install` and that it completed without errors.
 
 **3. "Address already in use"**
 *   The port is taken. See the "Changing the Port" section above.
 
 **4. Styles looking wrong?**
-*   The app uses Tailwind CSS. The `index.html` includes a CDN link for quick prototypes, but `package.json` includes tailwind for production builds. If offline, the CDN link won't load.
-*   **Fix:** Ensure you are connected to the internet for the first run, or setup a local Tailwind build process (included in `npm run build`).
+*   The app uses Tailwind CSS processed via PostCSS.
+*   **Fix:** Ensure `npm install` installed `tailwindcss`, `postcss`, and `autoprefixer`. Restart the server (`Ctrl+C` then `npm run dev`) to ensure the CSS pipeline rebuilds correctly.
 
 ---
 
@@ -109,7 +109,7 @@ To create a static version of the app (HTML/CSS/JS) that you can upload to any w
 
 ## 🔑 Environment Variables (Optional)
 
-Create a `.env` file in the root directory to enable external services:
+Create a `.env` file in the root directory to enable external services. The app will work fine without these, falling back to local simulation mode.
 
 ```env
 # Firebase Configuration (For Global High Scores)
