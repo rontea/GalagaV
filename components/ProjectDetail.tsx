@@ -5,13 +5,13 @@ import { FULL_ICON_MAP } from './ProjectList';
 import ConfirmModal from './ConfirmModal';
 import SettingsModal from './SettingsModal';
 import PluginView from './PluginView';
-import ProjectSettingsSidebar from './ProjectSettingsSidebar';
+import ProjectSettingsModal from './ProjectSettingsModal';
 import { 
   Layout, Database, Palette, CheckCircle2, Circle, Clock, LucideIcon,
   Edit2, Save, Plus, Trash2, Bot, Copy, Check, GripVertical, X, Fingerprint, Terminal,
   AlertOctagon, ChevronDown, ChevronRight, GitBranch, MoveUp, Minimize2, Maximize2, CornerDownRight,
   ChevronUp, Tag, Layers, Play, Pause, Flag, Archive, Bookmark, Zap, AlertTriangle, Activity,
-  RefreshCw, FileWarning, StickyNote, Files, AppWindow, Blocks, ArrowLeft, Eye
+  RefreshCw, FileWarning, StickyNote, Files, AppWindow, Blocks, ArrowLeft, Eye, Settings
 } from 'lucide-react';
 
 // --- Utility: Robust Copy to Clipboard ---
@@ -540,7 +540,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
   // UI State
   const [activeTab, setActiveTab] = useState('timeline');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isEditingDesc, setIsEditingDesc] = useState(false);
+  const [isProjectSettingsOpen, setIsProjectSettingsOpen] = useState(false);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<Step>>({});
   const [copiedStepId, setCopiedStepId] = useState<string | null>(null);
@@ -559,9 +559,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
   
   // Completed Steps Expansion State (Shrunk by default)
   const [expandedCompletedSteps, setExpandedCompletedSteps] = useState<Record<string, boolean>>({});
-
-  // Project Info Editing State
-  const [description, setDescription] = useState(project.description);
 
   // Drag and Drop State (Main Tasks)
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -599,25 +596,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     return statuses;
   }, [project.statuses]);
 
-  // Sync local info form if project prop changes externally
-  useEffect(() => {
-    setDescription(project.description);
-  }, [project.description]);
-
-  // --- Handlers: Description ---
-
-  const handleSaveDesc = () => {
-    onUpdateProject({
-      ...project,
-      description
-    });
-    setIsEditingDesc(false);
-  };
-
-  const handleCancelDesc = () => {
-    setDescription(project.description);
-    setIsEditingDesc(false);
-  };
 
   const handleDownloadProject = () => {
     const jsonString = JSON.stringify(project, null, 2);
@@ -1306,6 +1284,15 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
         config={globalConfig}
         onUpdateConfig={onUpdateGlobalConfig}
       />
+      
+      {/* Project Settings Modal */}
+      <ProjectSettingsModal 
+        isOpen={isProjectSettingsOpen}
+        onClose={() => setIsProjectSettingsOpen(false)}
+        project={project}
+        onUpdateProject={onUpdateProject}
+        globalConfig={globalConfig}
+      />
 
       {/* --- TABS NAVIGATION --- */}
       <div className="max-w-6xl mx-auto px-4 mt-6">
@@ -1358,11 +1345,9 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
             // 1. Timeline
             if (activeTab === 'timeline') {
                 return (
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                        {/* LEFT COLUMN: Mission Brief & Timeline (Span 3) */}
-                        <div className="lg:col-span-3">
-                            {/* Project Info Card (Mission Brief) */}
-                            <div className="mb-16 p-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-gradient-to-b dark:from-slate-900/80 dark:to-slate-900/40 shadow-2xl dark:backdrop-blur-sm relative group/info">
+                    <div className="space-y-8">
+                         {/* Project Info Card (Mission Brief) */}
+                         <div className="mb-16 p-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-gradient-to-b dark:from-slate-900/80 dark:to-slate-900/40 shadow-2xl dark:backdrop-blur-sm relative group/info">
                               
                               <div className="flex items-center gap-4 mb-6">
                                 <div className="w-12 h-12 rounded-lg bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400 shadow-sm dark:shadow-[0_0_15px_rgba(6,182,212,0.2)]">
@@ -1374,65 +1359,32 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                                 </div>
                               </div>
 
-                              {!isEditingDesc && (
-                                <button 
-                                  onClick={() => setIsEditingDesc(true)}
-                                  className="absolute top-4 right-4 p-2 text-slate-400 hover:text-cyan-600 dark:text-slate-600 dark:hover:text-cyan-400 transition-colors opacity-0 group-hover/info:opacity-100 focus:opacity-100"
-                                  title="Edit Mission Brief"
-                                  aria-label="Edit Mission Brief"
-                                >
-                                  <Edit2 size={16} aria-hidden="true" />
-                                </button>
-                              )}
+                              <button 
+                                onClick={() => setIsProjectSettingsOpen(true)}
+                                className="absolute top-4 right-4 p-2 text-slate-400 hover:text-cyan-600 dark:text-slate-600 dark:hover:text-cyan-400 transition-colors bg-white/50 dark:bg-black/20 rounded-lg border border-transparent hover:border-cyan-200 dark:hover:border-cyan-800"
+                                title="Project Settings (Identity, Categories, Statuses)"
+                              >
+                                <Settings size={18} aria-hidden="true" />
+                              </button>
 
-                              {isEditingDesc ? (
-                                // EDIT MODE: Description
-                                <div className="flex flex-col gap-4 animate-in fade-in duration-200">
-                                  <div>
-                                    <label htmlFor="mission-brief" className="text-[10px] uppercase tracking-widest text-slate-500 dark:text-slate-400 font-bold mb-1 block">Mission Brief (Description)</label>
-                                    <textarea 
-                                        id="mission-brief"
-                                        value={description}
-                                        onChange={(e) => setDescription(e.target.value)}
-                                        className="w-full h-24 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-slate-800 dark:text-slate-300 focus:border-cyan-500 outline-none resize-none"
-                                        autoFocus
-                                    />
+                              {/* VIEW MODE: Description */}
+                              <div className="flex flex-col gap-6">
+                                <div>
+                                  <h2 className="text-xs font-mono text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em] mb-3">Mission Brief</h2>
+                                  <p className="text-xl text-slate-700 dark:text-slate-100 leading-relaxed font-light break-words">
+                                    {project.description}
+                                  </p>
+                                </div>
+                                
+                                <div className="mt-2">
+                                  <div className="flex items-center justify-between mb-3">
+                                      <h2 className="text-xs font-mono text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em]">Active Context</h2>
                                   </div>
-                                  <div className="flex justify-end gap-3">
-                                    <button 
-                                      onClick={handleCancelDesc}
-                                      className="px-3 py-1.5 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white text-xs uppercase font-bold"
-                                    >
-                                      Cancel
-                                    </button>
-                                    <button 
-                                      onClick={handleSaveDesc}
-                                      className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs uppercase font-bold"
-                                    >
-                                      Save Brief
-                                    </button>
+                                  <div className="bg-slate-50 dark:bg-black/60 rounded-lg p-5 border border-slate-200 dark:border-slate-800/60 font-mono text-xs sm:text-sm text-emerald-600 dark:text-emerald-500/80 whitespace-pre-wrap shadow-inner max-h-40 overflow-y-auto custom-scrollbar break-words">
+                                    {project.systemPrompt}
                                   </div>
                                 </div>
-                              ) : (
-                                // VIEW MODE: Description
-                                <div className="flex flex-col gap-6">
-                                  <div>
-                                    <h2 className="text-xs font-mono text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em] mb-3">Mission Brief</h2>
-                                    <p className="text-xl text-slate-700 dark:text-slate-100 leading-relaxed font-light break-words">
-                                      {project.description}
-                                    </p>
-                                  </div>
-                                  
-                                  <div className="mt-2">
-                                    <div className="flex items-center justify-between mb-3">
-                                        <h2 className="text-xs font-mono text-slate-500 dark:text-slate-400 uppercase tracking-[0.2em]">Active Context</h2>
-                                    </div>
-                                    <div className="bg-slate-50 dark:bg-black/60 rounded-lg p-5 border border-slate-200 dark:border-slate-800/60 font-mono text-xs sm:text-sm text-emerald-600 dark:text-emerald-500/80 whitespace-pre-wrap shadow-inner max-h-40 overflow-y-auto custom-scrollbar break-words">
-                                      {project.systemPrompt}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
+                              </div>
                             </div>
 
                             {/* Timeline Steps */}
@@ -1924,16 +1876,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                                 </button>
                               </div>
                             </div>
-                        </div>
-
-                        {/* RIGHT COLUMN: Settings Sidebar (Span 1) */}
-                        <div className="lg:col-span-1">
-                            <ProjectSettingsSidebar 
-                                project={project}
-                                onUpdateProject={onUpdateProject}
-                                globalConfig={globalConfig}
-                            />
-                        </div>
                     </div>
                 );
             }
