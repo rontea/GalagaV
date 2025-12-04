@@ -96,6 +96,7 @@ export interface Step {
   subSteps?: Step[]; // Nested tasks / sub-cards
   archivedAt?: number; // Timestamp if soft-deleted/archived
   notes?: string; // Quick scratchpad notes
+  isTab?: boolean; // If true, shows as a main navigation tab
 }
 
 export interface Project {
