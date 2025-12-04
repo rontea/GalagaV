@@ -22,7 +22,7 @@ const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 transition-all duration-300">
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           {onBack && (
             <button 

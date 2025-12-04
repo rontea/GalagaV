@@ -1415,7 +1415,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
         </div>
       )}
 
-      <main className="max-w-4xl mx-auto px-4 py-10 sm:px-6">
+      <main className="max-w-6xl mx-auto px-4 py-10 sm:px-6">
         
         {/* Project Info Card (Mission Brief) */}
         <div className="mb-16 p-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-gradient-to-b dark:from-slate-900/80 dark:to-slate-900/40 shadow-2xl dark:backdrop-blur-sm relative group/info">
