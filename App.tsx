@@ -115,7 +115,14 @@ const App: React.FC = () => {
   }, [projects, isInitialized]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_GLOBAL_CONFIG, JSON.stringify(globalConfig));
+    try {
+      localStorage.setItem(STORAGE_KEY_GLOBAL_CONFIG, JSON.stringify(globalConfig));
+    } catch (e) {
+      console.error("Failed to save global config:", e);
+      if ((e as any).name === 'QuotaExceededError') {
+         alert("Storage Quota Exceeded! Your plugin file might be too large to save locally. Please uninstall large plugins or use a URL hosted plugin.");
+      }
+    }
   }, [globalConfig]);
 
   // --- Actions ---

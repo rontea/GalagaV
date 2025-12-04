@@ -81,16 +81,21 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Create a blob URL for the file to simulate a hosted URL
-    const objectUrl = URL.createObjectURL(file);
-    setNewPluginUrl(objectUrl);
-    
-    // Auto-fill name if empty
-    if (!newPluginName) {
-        // Remove extension and capitalize first letter
-        const name = file.name.replace(/\.[^/.]+$/, "");
-        setNewPluginName(name.charAt(0).toUpperCase() + name.slice(1));
-    }
+    // Use FileReader to create a persistent Data URI (Base64)
+    // This allows the plugin code to be saved in LocalStorage and survive reloads
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const result = event.target?.result as string;
+        setNewPluginUrl(result);
+        
+        // Auto-fill name if empty
+        if (!newPluginName) {
+            // Remove extension and capitalize first letter
+            const name = file.name.replace(/\.[^/.]+$/, "");
+            setNewPluginName(name.charAt(0).toUpperCase() + name.slice(1));
+        }
+    };
+    reader.readAsDataURL(file);
   };
 
   // --- Render Helpers ---
@@ -213,7 +218,9 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                             </div>
                             <div>
                                 <h4 className={`text-sm font-bold ${plugin.enabled ? 'text-slate-900 dark:text-white' : 'text-slate-400'}`}>{plugin.name}</h4>
-                                <code className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-900 px-1 py-0.5 rounded truncate max-w-[150px] inline-block" title={plugin.url}>{plugin.url.startsWith('blob:') ? '(Local File Upload)' : plugin.url}</code>
+                                <code className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-900 px-1 py-0.5 rounded truncate max-w-[150px] inline-block" title={plugin.url}>
+                                    {plugin.url.startsWith('data:') ? '(Local File Upload)' : plugin.url}
+                                </code>
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
