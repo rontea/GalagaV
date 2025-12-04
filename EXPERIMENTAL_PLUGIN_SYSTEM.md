@@ -17,6 +17,7 @@ To achieve a modular system where tools like a "Database Schema Creator" can be 
     *   Built as a **UMD/IIFE Library**.
     *   **Externalizes** React (does not bundle it).
     *   Consumes React from `window.React`.
+    *   **Injects CSS** via JS (no separate .css file).
     *   Exports a specific `PluginDefinition` object.
 
 ---
@@ -90,24 +91,27 @@ Your goal is to build a **"Database Schema Creator"** using `react-flow-renderer
 
 1.  **Build Target**: You are building a **Library**, not a standalone App.
 2.  **No Bundled React**: You MUST NOT bundle `react` or `react-dom`. You must expect them to exist on `window.React` and `window.ReactDOM`.
-3.  **Entry Point**: Your entry file must export a default object matching the `GalagaPlugin` interface.
+3.  **CSS Injection**: You MUST bundle CSS inside the JavaScript file.
+4.  **Entry Point**: Your entry file must export a default object matching the `GalagaPlugin` interface.
 
-**FILE STRUCTURE & CONFIGURATION:**
-
-**1. `vite.config.ts` (CRITICAL)**
-You must use this exact configuration to ensure the Host can load your code:
+**STEP 1: `vite.config.ts` (CRITICAL)**
+You must use this exact configuration. Note the use of `vite-plugin-css-injected-by-js`.
 
 ```typescript
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import cssInjectedByJsPlugin from 'vite-plugin-css-injected-by-js';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    cssInjectedByJsPlugin() // CRITICAL: Bundles CSS into the JS file
+  ],
   build: {
     lib: {
       entry: './src/index.tsx', // Your entry point
       name: 'SchemaBuilderPlugin', // Variable name in window
-      fileName: (format) => `schema-builder.${format}.js`,
+      fileName: (format) => `schema-builder.js`,
       formats: ['umd'] // Must be UMD to access window.React global
     },
     rollupOptions: {
@@ -130,12 +134,13 @@ export default defineConfig({
 });
 ```
 
-**2. `src/index.tsx` (Entry Point)**
+**STEP 2: `src/index.tsx` (Entry Point)**
 Your entry file must look like this:
 
 ```typescript
 import SchemaBuilderComponent from './SchemaBuilderComponent';
 import { Layout } from 'lucide-react';
+import './index.css'; // Ensure your CSS is imported here
 
 // Define the Interface (for type safety, though not strictly required at runtime)
 interface GalagaPlugin {
@@ -164,7 +169,7 @@ const plugin: GalagaPlugin = {
 export default plugin;
 ```
 
-**3. The Component (`src/SchemaBuilderComponent.tsx`)**
+**STEP 3: The Component (`src/SchemaBuilderComponent.tsx`)**
 Your main component receives these props. Use them to read/write data.
 
 ```typescript
@@ -188,4 +193,68 @@ export default SchemaBuilderComponent;
 ```
 
 **Task for AI:**
-Initialize the project structure, install `@xyflow/react` (React Flow), setup the `vite.config.ts` as specified above, and create a sophisticated `SchemaBuilderComponent` that allows creating tables, adding fields, and dragging them around.
+1. Initialize the project structure.
+2. Install `vite-plugin-css-injected-by-js`, `@xyflow/react` (React Flow).
+3. Setup `vite.config.ts`.
+4. Create a `SchemaBuilderComponent` that allows creating tables, adding fields, and dragging them around.
+
+---
+
+## 5. Phase 2: Packaging, Installing & Testing
+
+Follow these steps exactly to move your plugin from development to the GalagaV Dashboard.
+
+### Step 1: Build the Artifact
+In your external plugin project (the one the AI created for you):
+1.  Open your terminal.
+2.  Run the build command:
+    ```bash
+    npm run build
+    ```
+3.  Navigate to the `dist/` folder in your project directory.
+4.  Locate the file named `schema-builder.js` (or similar). **This is your Plugin Artifact.**
+
+### Step 2: Open GalagaV Settings
+1.  Run GalagaV (`npm run dev`) and open it in your browser.
+2.  Click the **Gear Icon (Settings)** in the top right corner.
+3.  Click the **Plugins** tab in the modal.
+
+### Step 3: Install the Plugin
+You will see a form to "Install New Plugin". Fill it out as follows:
+
+1.  **Display Name**: Enter a friendly name (e.g., "DB Schema Builder").
+2.  **Global Var Name**: **[CRITICAL]** This must match the `name` defined in your plugin's `vite.config.ts` -> `rollupOptions.output.name`.
+    *   *If you used the System Prompt above, this is:* `GalagaPlugin_SchemaBuilder`
+    *   *Why?* GalagaV looks for `window.GalagaPlugin_SchemaBuilder` after loading the script. If this doesn't match, it will fail.
+3.  **Script URL / Upload**:
+    *   Click the **Folder/Upload Icon** button.
+    *   Select your `dist/schema-builder.js` file.
+    *   *GalagaV will automatically convert this into a temporary `blob:` URL.*
+4.  Click **Install Module**.
+
+### Step 4: Verify Installation
+1.  The plugin should appear in the "Installed Plugins" list below.
+2.  Ensure the status button says **Active**.
+
+### Step 5: Run the Plugin
+1.  Close the Settings modal.
+2.  Open any **Project** (e.g., click "GalagaV").
+3.  Look at the **Tabs Bar** (next to "Timeline").
+4.  You should see a new tab labeled "DB Schema Builder".
+5.  Click the tab. Your external plugin should now render inside the dashboard!
+
+---
+
+## Troubleshooting Checklist
+
+*   **Error: "Script loaded but 'window.X' was not found"**
+    *   **Cause**: The "Global Var Name" you entered in Settings does not match the `output.name` in the plugin's `vite.config.ts`.
+    *   **Fix**: Check the `vite.config.ts` file in your plugin project. Look for `rollupOptions: { output: { name: 'THIS_STRING' } }`. Copy that string exactly into the Settings.
+
+*   **Error: "React is undefined"**
+    *   **Cause**: The plugin is trying to bundle React itself, or the Host isn't exposing it.
+    *   **Fix**: Ensure `vite.config.ts` has `external: ['react', 'react-dom']` and `globals: { react: 'React' }`.
+
+*   **Plugin looks unstyled**
+    *   **Cause**: CSS wasn't injected.
+    *   **Fix**: Ensure `vite-plugin-css-injected-by-js` is installed and added to the `plugins` array in `vite.config.ts`.

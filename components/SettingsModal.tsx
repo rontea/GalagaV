@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, X, Terminal, Circle, Plus, Trash2, Power, AlertCircle } from 'lucide-react';
+import { Settings, X, Terminal, Circle, Plus, Trash2, Power, AlertCircle, Upload } from 'lucide-react';
 import { GlobalConfig, PluginConfig } from '../types';
 import { FULL_ICON_MAP, DEFAULT_PROJECT_KEYS, DEFAULT_STATUS_KEYS } from './ProjectList';
 
@@ -74,6 +74,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
     if (confirm("Uninstall this plugin?")) {
         const updatedPlugins = (config.plugins || []).filter(p => p.id !== id);
         onUpdateConfig({ ...config, plugins: updatedPlugins });
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Create a blob URL for the file to simulate a hosted URL
+    const objectUrl = URL.createObjectURL(file);
+    setNewPluginUrl(objectUrl);
+    
+    // Auto-fill name if empty
+    if (!newPluginName) {
+        // Remove extension and capitalize first letter
+        const name = file.name.replace(/\.[^/.]+$/, "");
+        setNewPluginName(name.charAt(0).toUpperCase() + name.slice(1));
     }
   };
 
@@ -162,12 +178,18 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                         onChange={e => setNewPluginGlobal(e.target.value)}
                         className="bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs font-mono"
                     />
-                     <input 
-                        placeholder="Script URL (https://...)"
-                        value={newPluginUrl}
-                        onChange={e => setNewPluginUrl(e.target.value)}
-                        className="bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs font-mono"
-                    />
+                    <div className="flex gap-2">
+                        <input 
+                            placeholder="Script URL or Upload ->"
+                            value={newPluginUrl}
+                            onChange={e => setNewPluginUrl(e.target.value)}
+                            className="flex-1 bg-white dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded px-3 py-2 text-xs font-mono"
+                        />
+                         <label className="flex items-center justify-center px-3 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded cursor-pointer border border-slate-300 dark:border-slate-700 transition-colors" title="Upload local .js build">
+                            <Upload size={14} />
+                            <input type="file" accept=".js" onChange={handleFileUpload} className="hidden" />
+                        </label>
+                    </div>
                 </div>
                 <button 
                     onClick={handleAddPlugin}
@@ -191,7 +213,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                             </div>
                             <div>
                                 <h4 className={`text-sm font-bold ${plugin.enabled ? 'text-slate-900 dark:text-white' : 'text-slate-400'}`}>{plugin.name}</h4>
-                                <code className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-900 px-1 py-0.5 rounded">{plugin.globalName}</code>
+                                <code className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-900 px-1 py-0.5 rounded truncate max-w-[150px] inline-block" title={plugin.url}>{plugin.url.startsWith('blob:') ? '(Local File Upload)' : plugin.url}</code>
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
