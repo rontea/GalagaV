@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Settings, X, Terminal, Circle, Plus, Trash2, Power, AlertCircle, Upload, Package, FileCode, RefreshCw } from 'lucide-react';
+import { Settings, X, Terminal, Circle, Plus, Trash2, Power, AlertCircle, Upload, Package, FileCode, RefreshCw, Download } from 'lucide-react';
 import { GlobalConfig, PluginConfig, PluginManifest } from '../types';
 import { FULL_ICON_MAP, DEFAULT_PROJECT_KEYS, DEFAULT_STATUS_KEYS } from './ProjectList';
 import { getJiraPlugin } from '../data/defaultPlugins';
@@ -76,6 +76,121 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
      } else {
          alert("All default plugins are already installed.");
      }
+  };
+
+  const handleDownloadSampleZip = async () => {
+    try {
+      const zip = new JSZip();
+
+      // 1. Manifest
+      const manifest = {
+        id: "com.galagav.theme.jira.sample",
+        name: "Jira Theme (Sample)",
+        version: "1.0.0",
+        description: "A sample zip plugin for testing upload functionality.",
+        main: "index.js",
+        style: "style.css",
+        globalVar: "GalagaPlugin_JiraSample",
+        type: "theme"
+      };
+      zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+
+      // 2. CSS
+      const cssContent = `
+/* JIRA / Enterprise Theme Overrides (Sample) */
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+
+body {
+  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif !important;
+  background-color: #F4F5F7 !important;
+}
+.dark body { background-color: #172B4D !important; }
+
+/* Header */
+header {
+  background-color: #FFFFFF !important;
+  border-bottom: 1px solid #DFE1E6 !important;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+}
+.dark header {
+  background-color: #091E42 !important;
+  border-bottom: 1px solid #253858 !important;
+}
+
+/* Project Cards */
+.group.relative.rounded-xl {
+  border-radius: 3px !important;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
+  border: 1px solid #DFE1E6 !important;
+}
+
+/* Typography & Elements */
+h1, h2, h3, h4, h5, h6, button, input, textarea, select {
+  font-family: 'Roboto', sans-serif !important;
+  letter-spacing: normal !important;
+}
+
+/* Buttons */
+button {
+  border-radius: 3px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+}
+
+/* Primary Actions (Blue) */
+button.bg-cyan-600, button.bg-emerald-600 {
+  background-color: #0052CC !important;
+}
+button.bg-cyan-600:hover, button.bg-emerald-600:hover {
+  background-color: #0747A6 !important;
+}
+
+/* Remove Arcade Effects */
+.scanlines { display: none !important; }
+.font-mono { font-family: 'Roboto', sans-serif !important; }
+`;
+      zip.file("style.css", cssContent);
+
+      // 3. JS (UMD Wrapper)
+      const jsContent = `
+(function(global) {
+  const React = global.React;
+  
+  const JiraThemeInfo = () => {
+    return React.createElement('div', { className: "p-8 flex flex-col items-center justify-center h-full text-center" },
+      React.createElement('div', { className: "bg-[#DEEBFF] p-4 rounded-full mb-4" },
+        React.createElement(global.Lucide.Briefcase, { size: 32, className: "text-[#0052CC]" })
+      ),
+      React.createElement('h1', { className: "text-2xl font-bold text-[#172B4D] mb-4" }, "Enterprise Theme (Sample)"),
+      React.createElement('p', { className: "text-[#5E6C84] max-w-md" }, 
+        "This is a sample plugin loaded via Zip upload. It applies the Enterprise Design System styles."
+      )
+    );
+  };
+
+  global.GalagaPlugin_JiraSample = {
+    Component: JiraThemeInfo
+  };
+})(window);
+`;
+      zip.file("index.js", jsContent);
+
+      // Generate Blob
+      const blob = await zip.generateAsync({ type: "blob" });
+      const href = URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = href;
+      link.download = "jira-theme-sample.zip";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(href);
+
+    } catch (err) {
+      console.error("Failed to generate sample zip", err);
+      alert("Error generating sample zip file.");
+    }
   };
 
   const handleZipUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -254,15 +369,23 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                         <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Install New Plugin</h3>
                         <p className="text-xs text-slate-500 mb-4">Drag and drop a <strong>.zip</strong> file here or click to browse.</p>
                         
-                        <input 
-                            type="file" 
-                            accept=".zip" 
-                            onChange={handleZipUpload} 
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                        />
-                        <button className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold uppercase shadow-sm pointer-events-none">
-                            Select Plugin Package
-                        </button>
+                        <div className="flex justify-center gap-3 relative z-20">
+                            <input 
+                                type="file" 
+                                accept=".zip" 
+                                onChange={handleZipUpload} 
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            />
+                            <button className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold uppercase shadow-sm pointer-events-none">
+                                Select Zip
+                            </button>
+                             <button 
+                                onClick={(e) => { e.stopPropagation(); handleDownloadSampleZip(); }}
+                                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-xs font-bold uppercase shadow-sm hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-2 pointer-events-auto relative z-30"
+                            >
+                                <Download size={14} /> Sample
+                            </button>
+                        </div>
                     </>
                 )}
                 {uploadError && (
