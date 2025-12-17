@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Project, GlobalConfig } from '../types';
 import Header from './Header';
@@ -27,6 +28,7 @@ interface ProjectListProps {
   // Global Config Props
   globalConfig: GlobalConfig;
   onUpdateGlobalConfig: (config: GlobalConfig) => void;
+  newPluginsCount?: number;
 }
 
 // 1. Define the Full Library of available icons
@@ -72,7 +74,8 @@ const ProjectList: React.FC<ProjectListProps> = ({
   onPermanentDeleteProject,
   onClearArchive,
   globalConfig,
-  onUpdateGlobalConfig
+  onUpdateGlobalConfig,
+  newPluginsCount = 0
 }) => {
   const [isCreating, setIsCreating] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -130,11 +133,8 @@ const ProjectList: React.FC<ProjectListProps> = ({
       try {
         const result = event.target?.result as string;
         const parsed = JSON.parse(result);
-        
-        // Basic validation
         if (parsed.steps && Array.isArray(parsed.steps)) {
           onImportProject(parsed as Project);
-          // Reset input
           if (fileInputRef.current) fileInputRef.current.value = '';
         } else {
           alert('Invalid project file format.');
@@ -157,7 +157,6 @@ const ProjectList: React.FC<ProjectListProps> = ({
   return (
     <div className="max-w-6xl mx-auto px-4 py-10 sm:px-6">
       
-      {/* Reused Header with Theme Toggle */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
          <div>
             <h1 className="text-3xl font-bold text-slate-900 dark:text-white font-mono tracking-tight mb-2 flex items-center gap-3">
@@ -179,11 +178,17 @@ const ProjectList: React.FC<ProjectListProps> = ({
             <button
                type="button"
                onClick={() => setIsSettingsOpen(true)}
-               className="p-3 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-700 transition-colors"
+               className={`relative p-3 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white rounded-lg border border-slate-200 dark:border-slate-700 transition-colors ${newPluginsCount > 0 ? 'ring-2 ring-fuchsia-500/50 ring-offset-2 dark:ring-offset-slate-950 shadow-lg shadow-fuchsia-900/10' : ''}`}
                title="Dashboard Settings"
                aria-label="Open Dashboard Settings"
             >
                <Settings size={20} />
+               {newPluginsCount > 0 && (
+                 <span className="absolute -top-1 -right-1 flex h-4 w-4">
+                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-fuchsia-400 opacity-75"></span>
+                   <span className="relative inline-flex rounded-full h-4 w-4 bg-fuchsia-500 flex items-center justify-center text-[10px] text-white font-bold">{newPluginsCount}</span>
+                 </span>
+               )}
             </button>
 
             <input 
@@ -265,7 +270,6 @@ const ProjectList: React.FC<ProjectListProps> = ({
         )}
       </div>
 
-      {/* SETTINGS MODAL */}
       <SettingsModal 
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -273,7 +277,6 @@ const ProjectList: React.FC<ProjectListProps> = ({
         onUpdateConfig={onUpdateGlobalConfig}
       />
 
-      {/* NEW PROJECT FORM */}
       {isCreating && viewMode === 'active' && (
         <div className="mb-12 p-6 bg-white dark:bg-slate-900/80 border border-cyan-500/30 rounded-xl shadow-2xl backdrop-blur-sm animate-in fade-in slide-in-from-top-4">
           <form onSubmit={handleCreate} className="flex flex-col gap-4">
@@ -342,7 +345,6 @@ const ProjectList: React.FC<ProjectListProps> = ({
         </div>
       )}
 
-      {/* PROJECT GRID */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {displayedProjects.map((project) => {
           const IconComponent = FULL_ICON_MAP[project.icon || 'Terminal'] || Terminal;
@@ -367,9 +369,7 @@ const ProjectList: React.FC<ProjectListProps> = ({
                   : 'bg-white dark:bg-slate-900/40 border border-slate-200 dark:border-slate-800 hover:border-cyan-500/40 hover:shadow-2xl hover:shadow-cyan-900/10 hover:-translate-y-1 cursor-pointer'}
               `}
             >
-              {/* Action Buttons */}
               <div className="absolute top-4 right-4 flex gap-2 z-20">
-                 {/* Show actions on hover for active, always for archived to be obvious */}
                  <div className={`flex gap-2 transition-opacity ${isArchived ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
                   {isArchived ? (
                     <>

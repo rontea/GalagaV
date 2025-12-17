@@ -1,3 +1,4 @@
+
 import { PluginConfig, PluginManifest } from '../types';
 
 export const JIRA_MANIFEST: PluginManifest = {
@@ -13,110 +14,175 @@ export const JIRA_MANIFEST: PluginManifest = {
 
 export const JIRA_CSS = `
 /* JIRA / Enterprise Theme Overrides */
-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --jira-blue: #0052CC;
+  --jira-blue-hover: #0747A6;
+  --jira-bg: #F4F5F7;
+  --jira-text: #172B4D;
+  --jira-subtle: #5E6C84;
+  --jira-border: #DFE1E6;
+}
 
 body {
-  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif !important;
-  background-color: #F4F5F7 !important;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, 'Helvetica Neue', sans-serif !important;
+  background-color: var(--jira-bg) !important;
+  color: var(--jira-text) !important;
 }
-.dark body { background-color: #172B4D !important; }
 
-/* Header */
+.dark body { 
+  background-color: #091E42 !important; 
+  color: #DEEBFF !important;
+}
+
+/* Header Adjustments */
 header {
   background-color: #FFFFFF !important;
-  border-bottom: 1px solid #DFE1E6 !important;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+  border-bottom: 1px solid var(--jira-border) !important;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.1) !important;
 }
+
 .dark header {
-  background-color: #091E42 !important;
+  background-color: #0747A6 !important;
   border-bottom: 1px solid #253858 !important;
 }
 
-/* Project Cards */
+/* Dashboard UI */
 .group.relative.rounded-xl {
   border-radius: 3px !important;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.1) !important;
-  border: 1px solid #DFE1E6 !important;
+  box-shadow: 0 1px 1px rgba(9, 30, 66, 0.25), 0 0 1px rgba(9, 30, 66, 0.31) !important;
+  border: none !important;
+  background-color: #FFFFFF !important;
 }
 
-/* Typography & Elements */
-h1, h2, h3, h4, h5, h6, button, input, textarea, select {
-  font-family: 'Roboto', sans-serif !important;
-  letter-spacing: normal !important;
+.dark .group.relative.rounded-xl {
+  background-color: #172B4D !important;
+}
+
+/* Navigation & Tabs */
+button[role="tab"] {
+  font-family: 'Inter', sans-serif !important;
+  text-transform: none !important;
+  font-weight: 500 !important;
+}
+
+button[role="tab"][aria-selected="true"] {
+  color: var(--jira-blue) !important;
+  border-bottom-color: var(--jira-blue) !important;
 }
 
 /* Buttons */
 button {
   border-radius: 3px !important;
-  font-weight: 500 !important;
+  font-family: 'Inter', sans-serif !important;
   text-transform: none !important;
+  letter-spacing: normal !important;
+  font-weight: 500 !important;
 }
 
-/* Primary Actions (Blue) */
-button.bg-cyan-600, button.bg-emerald-600 {
-  background-color: #0052CC !important;
-}
-button.bg-cyan-600:hover, button.bg-emerald-600:hover {
-  background-color: #0747A6 !important;
+button.bg-cyan-600, 
+button.bg-emerald-600 {
+  background-color: var(--jira-blue) !important;
 }
 
-/* Inputs */
+button.bg-cyan-600:hover, 
+button.bg-emerald-600:hover {
+  background-color: var(--jira-blue-hover) !important;
+}
+
+/* Typography Overrides */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Inter', sans-serif !important;
+  letter-spacing: -0.01em !important;
+}
+
+.font-mono {
+  font-family: 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace !important;
+}
+
+/* Form Elements */
 input, textarea, select {
   border-radius: 3px !important;
-  border: 2px solid #DFE1E6 !important;
+  border: 2px solid var(--jira-border) !important;
   background-color: #FAFBFC !important;
-  color: #172B4D !important;
+  color: var(--jira-text) !important;
 }
+
 input:focus, textarea:focus, select:focus {
   border-color: #4C9AFF !important;
   background-color: #FFFFFF !important;
-  box-shadow: none !important;
+  box-shadow: 0 0 0 2px rgba(76, 154, 255, 0.2) !important;
 }
 
-/* Status Badges */
+/* Remove Gaming Effects */
+.scanlines { display: none !important; }
+.font-arcade { font-family: 'Inter', sans-serif !important; text-transform: none !important; }
+
+/* Status Styles */
 span.rounded-full, div.rounded {
   border-radius: 3px !important;
 }
-
-/* Remove Arcade Effects */
-.scanlines { display: none !important; }
-.font-mono { font-family: 'Roboto', sans-serif !important; }
 `;
 
 export const JIRA_JS = `
-(function(global) {
-  const React = global.React;
+(function(win) {
+  const React = win.React;
+  const Lucide = win.Lucide;
   
-  // This component is only used if the plugin type is 'tool' or loaded manually.
-  // Since we set type: 'theme', this component serves as metadata or preview if needed.
   const JiraThemeInfo = () => {
-    return React.createElement('div', { className: "p-8 flex flex-col items-center justify-center h-full text-center" },
-      React.createElement('div', { className: "bg-[#DEEBFF] p-4 rounded-full mb-4" },
-        React.createElement(global.Lucide.Briefcase, { size: 32, className: "text-[#0052CC]" })
+    if (!React || !Lucide) return null;
+    
+    return React.createElement('div', { 
+        className: "p-12 flex flex-col items-center justify-center h-full text-center bg-[#F4F5F7] dark:bg-[#091E42]" 
+      },
+      React.createElement('div', { className: "bg-[#DEEBFF] p-6 rounded-full mb-6 shadow-sm" },
+        React.createElement(Lucide.Briefcase || Lucide.Settings, { size: 48, className: "text-[#0052CC]" })
       ),
-      React.createElement('h1', { className: "text-2xl font-bold text-[#172B4D] mb-4" }, "Enterprise Theme Active"),
-      React.createElement('p', { className: "text-[#5E6C84] max-w-md" }, 
-        "The system interface has been updated to use the Enterprise Design System. This theme overrides global styles to provide a cleaner, sans-serif look with professional blue accents."
+      React.createElement('h1', { className: "text-3xl font-bold text-[#172B4D] dark:text-white mb-4" }, "Enterprise Design Active"),
+      React.createElement('p', { className: "text-[#5E6C84] dark:text-slate-400 max-w-lg leading-relaxed text-lg" }, 
+        "The GalagaV interface has been successfully transformed into a professional workspace using the Enterprise Design System. Retro aesthetics have been suppressed for maximum productivity."
+      ),
+      React.createElement('div', { className: "mt-8 flex gap-3" },
+        React.createElement('span', { className: "px-3 py-1 bg-[#EAE6FF] text-[#403294] text-xs font-bold rounded" }, "STABLE V1.0"),
+        React.createElement('span', { className: "px-3 py-1 bg-[#E3FCEF] text-[#006644] text-xs font-bold rounded" }, "THEME ACTIVE")
       )
     );
   };
 
-  global.GalagaPlugin_JiraTheme = {
+  win.GalagaPlugin_JiraTheme = {
     Component: JiraThemeInfo
   };
 })(window);
 `;
 
-export const getJiraPlugin = (): PluginConfig => {
-  // Helper to safe encode UTF-8 strings to Base64
-  const toBase64 = (str: string) => btoa(unescape(encodeURIComponent(str)));
+/**
+ * Robustly encodes a string to a Base64 Data URI.
+ * Uses TextEncoder to handle non-ASCII characters correctly.
+ */
+const toBase64DataUri = (content: string, mimeType: string) => {
+  try {
+    const bytes = new TextEncoder().encode(content);
+    let binary = '';
+    const len = bytes.byteLength;
+    for (let i = 0; i < len; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const b64 = btoa(binary);
+    return `data:${mimeType};base64,${b64}`;
+  } catch (e) {
+    console.error(`Base64 encoding failed for ${mimeType}:`, e);
+    return '';
+  }
+};
 
-  const cssUri = `data:text/css;base64,${toBase64(JIRA_CSS)}`;
-  const jsUri = `data:text/javascript;base64,${toBase64(JIRA_JS)}`;
+export const getJiraPlugin = (): PluginConfig => {
+  const cssUri = toBase64DataUri(JIRA_CSS, 'text/css');
+  const jsUri = toBase64DataUri(JIRA_JS, 'text/javascript');
 
   return {
     id: JIRA_MANIFEST.id,
-    enabled: false, // Default to disabled
+    enabled: false,
     manifest: JIRA_MANIFEST,
     files: {
       "index.js": jsUri,

@@ -1,5 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
-import { Project, GlobalConfig } from './types';
+import { Project, GlobalConfig, PluginConfig } from './types';
 import ProjectList, { DEFAULT_PROJECT_KEYS, DEFAULT_STATUS_KEYS } from './components/ProjectList';
 import ProjectDetail from './components/ProjectDetail';
 import ConfirmModal from './components/ConfirmModal';
@@ -12,6 +13,7 @@ const STORAGE_KEY_V2 = 'galaga_projects_v2';
 const STORAGE_KEY_GLOBAL_CONFIG = 'galaga_global_config_v1';
 const STORAGE_KEY_INSTALLED_DEFAULTS = 'galaga_installed_default_plugins';
 const STORAGE_KEY_BLOCKED_PLUGINS = 'galaga_blocked_plugins';
+const STORAGE_KEY_DESTROYED_PLUGINS = 'galaga_destroyed_plugins';
 
 const DEFAULT_PROJECT: Project = {
   id: 'proj_galagav_default',
@@ -68,6 +70,7 @@ const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [newPluginsCount, setNewPluginsCount] = useState(0);
   
   // Global Configuration
   const [globalConfig, setGlobalConfig] = useState<GlobalConfig>({
@@ -82,101 +85,114 @@ const App: React.FC = () => {
 
   // Initialization & Migration
   useEffect(() => {
-    try {
-      const v2Data = localStorage.getItem(STORAGE_KEY_V2);
-      if (v2Data) {
-        setProjects(JSON.parse(v2Data));
-      } else {
-        // Check for V1 data migration
-        const v1Data = localStorage.getItem(STORAGE_KEY_V1);
-        if (v1Data) {
-          const p = JSON.parse(v1Data);
-          setProjects([p]);
-          localStorage.setItem(STORAGE_KEY_V2, JSON.stringify([p]));
+    const initialize = async () => {
+      try {
+        const v2Data = localStorage.getItem(STORAGE_KEY_V2);
+        if (v2Data) {
+          setProjects(JSON.parse(v2Data));
         } else {
-          // Clean slate
-          setProjects([DEFAULT_PROJECT]);
-          localStorage.setItem(STORAGE_KEY_V2, JSON.stringify([DEFAULT_PROJECT]));
-        }
-      }
-      
-      // Load Global Config
-      const configData = localStorage.getItem(STORAGE_KEY_GLOBAL_CONFIG);
-      let loadedConfig: GlobalConfig = {
-        projectIcons: DEFAULT_PROJECT_KEYS,
-        statusIcons: DEFAULT_STATUS_KEYS,
-        plugins: [],
-        theme: 'dark'
-      };
-
-      if (configData) {
-        const parsed = JSON.parse(configData);
-        // Ensure plugins array exists if loading from older config
-        if (!parsed.plugins) parsed.plugins = [];
-        loadedConfig = parsed;
-      }
-
-      // --- AUTO-INSTALL / UPDATE DEFAULT PLUGINS (Jira Theme) ---
-      // Logic: Only install defaults if they haven't been installed (and potentially deleted) before.
-      // AND if they haven't been permanently blocked by the user.
-      const previouslyInstalledIds: string[] = JSON.parse(localStorage.getItem(STORAGE_KEY_INSTALLED_DEFAULTS) || '[]');
-      const blockedPlugins: string[] = JSON.parse(localStorage.getItem(STORAGE_KEY_BLOCKED_PLUGINS) || '[]');
-      
-      const defaultPlugins = [getJiraPlugin()];
-      let defaultsTrackerChanged = false;
-
-      defaultPlugins.forEach(defPlugin => {
-          // 1. Check Blocklist
-          if (blockedPlugins.includes(defPlugin.id)) {
-              return; // Skip blocked plugins entirely
-          }
-
-          const hasBeenInstalled = previouslyInstalledIds.includes(defPlugin.id);
-          const existingPluginIndex = loadedConfig.plugins.findIndex(p => p.id === defPlugin.id);
-
-          if (!hasBeenInstalled) {
-              // Case 1: First time this app version is installing this default plugin
-              if (existingPluginIndex === -1) {
-                  console.log(`Installing default plugin: ${defPlugin.manifest.name}`);
-                  loadedConfig.plugins.push(defPlugin);
-              } else {
-                  // It exists (maybe user manually added it or from legacy version), 
-                  // just update it to ensure it's correct
-                  loadedConfig.plugins[existingPluginIndex] = {
-                      ...defPlugin,
-                      enabled: loadedConfig.plugins[existingPluginIndex].enabled
-                  };
-              }
-              // Mark as installed so we don't force it back if user deletes it later
-              previouslyInstalledIds.push(defPlugin.id);
-              defaultsTrackerChanged = true;
+          // Check for V1 data migration
+          const v1Data = localStorage.getItem(STORAGE_KEY_V1);
+          if (v1Data) {
+            const p = JSON.parse(v1Data);
+            setProjects([p]);
+            localStorage.setItem(STORAGE_KEY_V2, JSON.stringify([p]));
           } else {
-              // Case 2: We have installed it before.
-              // If it exists in config, update it to patch any code changes, 
-              // BUT respect the previous enable/disable state if possible,
-              // AND DO NOT Re-add if user deleted it (handled by not pushing if index is -1).
-              if (existingPluginIndex !== -1) {
-                  loadedConfig.plugins[existingPluginIndex] = {
-                      ...defPlugin,
-                      enabled: loadedConfig.plugins[existingPluginIndex].enabled
-                  };
-                  console.log(`Updated definition for: ${defPlugin.manifest.name}`);
-              }
+            // Clean slate
+            setProjects([DEFAULT_PROJECT]);
+            localStorage.setItem(STORAGE_KEY_V2, JSON.stringify([DEFAULT_PROJECT]));
           }
-      });
+        }
+        
+        // Load Global Config
+        const configData = localStorage.getItem(STORAGE_KEY_GLOBAL_CONFIG);
+        let loadedConfig: GlobalConfig = {
+          projectIcons: DEFAULT_PROJECT_KEYS,
+          statusIcons: DEFAULT_STATUS_KEYS,
+          plugins: [],
+          theme: 'dark'
+        };
 
-      if (defaultsTrackerChanged) {
-          localStorage.setItem(STORAGE_KEY_INSTALLED_DEFAULTS, JSON.stringify(previouslyInstalledIds));
+        if (configData) {
+          const parsed = JSON.parse(configData);
+          if (!parsed.plugins) parsed.plugins = [];
+          loadedConfig = parsed;
+        }
+
+        // --- AUTO-INSTALL / UPDATE DEFAULT PLUGINS ---
+        const previouslyInstalledIds: string[] = JSON.parse(localStorage.getItem(STORAGE_KEY_INSTALLED_DEFAULTS) || '[]');
+        const blockedPlugins: string[] = JSON.parse(localStorage.getItem(STORAGE_KEY_BLOCKED_PLUGINS) || '[]');
+        const destroyedPlugins: string[] = JSON.parse(localStorage.getItem(STORAGE_KEY_DESTROYED_PLUGINS) || '[]');
+        
+        const defaultPlugins = [getJiraPlugin()];
+        let defaultsTrackerChanged = false;
+
+        defaultPlugins.forEach(defPlugin => {
+            // Check if explicitly blocked or destroyed by user
+            if (blockedPlugins.includes(defPlugin.id) || destroyedPlugins.includes(defPlugin.id)) {
+                return;
+            }
+
+            const hasBeenInstalled = previouslyInstalledIds.includes(defPlugin.id);
+            const existingPluginIndex = loadedConfig.plugins.findIndex(p => p.id === defPlugin.id);
+
+            if (!hasBeenInstalled) {
+                // If it's a new default plugin, add it
+                if (existingPluginIndex === -1) {
+                    loadedConfig.plugins.push(defPlugin);
+                    console.log(`[BOOT] Auto-installed default plugin: ${defPlugin.id}`);
+                } else {
+                    // Update existing instance if found but not in 'defaults' registry
+                    loadedConfig.plugins[existingPluginIndex] = {
+                        ...defPlugin,
+                        enabled: loadedConfig.plugins[existingPluginIndex].enabled
+                    };
+                }
+                previouslyInstalledIds.push(defPlugin.id);
+                defaultsTrackerChanged = true;
+            } else {
+                // Already processed defaults, just ensure the code (files/manifest) is latest
+                if (existingPluginIndex !== -1) {
+                    loadedConfig.plugins[existingPluginIndex] = {
+                        ...defPlugin,
+                        enabled: loadedConfig.plugins[existingPluginIndex].enabled
+                    };
+                }
+            }
+        });
+
+        if (defaultsTrackerChanged) {
+            localStorage.setItem(STORAGE_KEY_INSTALLED_DEFAULTS, JSON.stringify(previouslyInstalledIds));
+        }
+
+        setGlobalConfig(loadedConfig);
+
+        // --- SCAN DISK FOR NEW PLUGINS ---
+        try {
+            const res = await fetch(`/__system/list-plugins?t=${Date.now()}`);
+            if (res.ok) {
+                const diskPlugins: PluginConfig[] = await res.json();
+                const installedIds = loadedConfig.plugins.map(p => p.id);
+                const count = diskPlugins.filter(p => 
+                    !installedIds.includes(p.id) && 
+                    !blockedPlugins.includes(p.id) && 
+                    !destroyedPlugins.includes(p.id)
+                ).length;
+                setNewPluginsCount(count);
+            }
+        } catch (e) {
+            // Silently fail scanning if endpoint not available
+        }
+
+      } catch (e) {
+        console.warn("Failed to load/migrate projects", e);
+        setProjects([DEFAULT_PROJECT]);
+      } finally {
+        setIsInitialized(true);
       }
+    };
 
-      setGlobalConfig(loadedConfig);
-
-    } catch (e) {
-      console.warn("Failed to load/migrate projects", e);
-      setProjects([DEFAULT_PROJECT]);
-    } finally {
-      setIsInitialized(true);
-    }
+    initialize();
   }, []);
 
   // Persistence
@@ -191,20 +207,10 @@ const App: React.FC = () => {
       localStorage.setItem(STORAGE_KEY_GLOBAL_CONFIG, JSON.stringify(globalConfig));
     } catch (e) {
       console.error("Failed to save global config:", e);
-      if ((e as any).name === 'QuotaExceededError') {
-         alert("Storage Quota Exceeded! Your plugin file might be too large to save locally. Please uninstall large plugins or use a URL hosted plugin.");
-      }
     }
   }, [globalConfig, isInitialized]);
 
   // --- Actions ---
-
-  const handleToggleTheme = () => {
-    setGlobalConfig(prev => ({
-      ...prev,
-      theme: prev.theme === 'dark' ? 'light' : 'dark'
-    }));
-  };
 
   const handleUpdateGlobalConfig = (newConfig: GlobalConfig) => {
     setGlobalConfig(newConfig);
@@ -217,15 +223,14 @@ const App: React.FC = () => {
       name,
       description,
       systemPrompt: systemPrompt || DEFAULT_PROJECT.systemPrompt,
-      icon: 'Terminal', // Default for new projects
-      steps: [] // Start clean for new projects
+      icon: 'Terminal',
+      steps: []
     };
     setProjects(prev => [...prev, newProject]);
     setActiveProjectId(newProject.id);
   };
 
   const handleImportProject = (importedProject: Project) => {
-    // Ensure unique ID to avoid conflicts if importing duplicates
     const uniqueProject = {
       ...importedProject,
       id: `proj_${Date.now()}_imported`,
@@ -234,40 +239,32 @@ const App: React.FC = () => {
     setProjects(prev => [...prev, uniqueProject]);
   };
 
-  // Soft Delete (Move to Archive)
   const handleSoftDeleteProject = (id: string) => {
-    // 1. Find the project first
     const project = projects.find(p => p.id === id);
     const projectName = project ? project.name : 'this project';
 
     setConfirmModal({
       isOpen: true,
       title: "Archive Project?",
-      message: `Are you sure you want to archive "${projectName}"? It will be moved to 'Archived Protocols' and removed from your active dashboard.`,
+      message: `Are you sure you want to archive "${projectName}"? It will be moved to 'Archived Protocols'.`,
       isDanger: false,
       confirmLabel: "Archive",
       onConfirm: () => {
         setProjects(prev => prev.map(p => 
           p.id === id ? { ...p, deletedAt: Date.now() } : p
         ));
-        
-        // If we are currently viewing this project, go back to dashboard
-        if (activeProjectId === id) {
-          setActiveProjectId(null);
-        }
+        if (activeProjectId === id) setActiveProjectId(null);
         setConfirmModal(null);
       }
     });
   };
 
-  // Restore from Archive
   const handleRestoreProject = (id: string) => {
     setProjects(prev => prev.map(p => 
       p.id === id ? { ...p, deletedAt: undefined } : p
     ));
   };
 
-  // Permanent Delete (Single Item)
   const handlePermanentDeleteProject = (id: string) => {
     const project = projects.find(p => p.id === id);
     const projectName = project ? project.name : 'this project';
@@ -275,7 +272,7 @@ const App: React.FC = () => {
     setConfirmModal({
       isOpen: true,
       title: "Delete Permanently?",
-      message: `WARNING: This will permanently destroy "${projectName}" and all its history. This action cannot be undone.`,
+      message: `WARNING: This will permanently destroy "${projectName}".`,
       isDanger: true,
       confirmLabel: "Destroy",
       onConfirm: () => {
@@ -285,12 +282,11 @@ const App: React.FC = () => {
     });
   };
 
-  // Clear Archive (Delete All Archived)
   const handleClearArchive = () => {
     setConfirmModal({
       isOpen: true,
       title: "Clear All Archives?",
-      message: "WARNING: This will permanently delete ALL archived projects. This action cannot be undone.",
+      message: "WARNING: This will permanently delete ALL archived projects.",
       isDanger: true,
       confirmLabel: "Clear All",
       onConfirm: () => {
@@ -306,8 +302,6 @@ const App: React.FC = () => {
 
   const activeProject = projects.find(p => p.id === activeProjectId);
 
-  // --- Render ---
-
   return (
     <div className={globalConfig.theme === 'dark' ? 'dark' : ''}>
       <PluginBootstrap globalConfig={globalConfig} />
@@ -320,6 +314,7 @@ const App: React.FC = () => {
             onDeleteProject={handleSoftDeleteProject}
             globalConfig={globalConfig}
             onUpdateGlobalConfig={handleUpdateGlobalConfig}
+            newPluginsCount={newPluginsCount}
           />
         ) : (
           <ProjectList 
@@ -333,10 +328,10 @@ const App: React.FC = () => {
             onClearArchive={handleClearArchive}
             globalConfig={globalConfig}
             onUpdateGlobalConfig={handleUpdateGlobalConfig}
+            newPluginsCount={newPluginsCount}
           />
         )}
 
-        {/* Global Confirmation Modal */}
         {confirmModal && (
           <ConfirmModal 
             isOpen={confirmModal.isOpen}

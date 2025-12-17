@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { Settings, X, ArrowLeft, Sun, Moon, Download } from 'lucide-react';
+import { Settings, X, ArrowLeft, Sun, Moon, Download, Sparkles } from 'lucide-react';
 
 interface HeaderProps {
   title: string;
@@ -9,6 +10,7 @@ interface HeaderProps {
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onDownload?: () => void;
+  newPluginsCount?: number;
 }
 
 const Header: React.FC<HeaderProps> = ({ 
@@ -18,7 +20,8 @@ const Header: React.FC<HeaderProps> = ({
   onBack, 
   theme, 
   onToggleTheme,
-  onDownload
+  onDownload,
+  newPluginsCount = 0
 }) => {
   return (
     <header className="w-full border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-950/80 backdrop-blur-md sticky top-0 z-50 transition-all duration-300">
@@ -66,7 +69,7 @@ const Header: React.FC<HeaderProps> = ({
           <button 
             onClick={onToggleSettings}
             className={`
-              flex items-center gap-2 px-3 py-1.5 rounded-md border transition-all duration-200
+              relative flex items-center gap-2 px-3 py-1.5 rounded-md border transition-all duration-200
               ${isSettingsOpen 
                 ? 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-900 dark:text-white shadow-inner' 
                 : 'bg-transparent border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600 hover:text-cyan-600 dark:hover:text-cyan-400'}
@@ -81,6 +84,12 @@ const Header: React.FC<HeaderProps> = ({
               <>
                 <span className="text-xs font-mono uppercase font-bold hidden sm:inline">Settings</span>
                 <Settings size={16} />
+                {newPluginsCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-fuchsia-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-fuchsia-500"></span>
+                  </span>
+                )}
               </>
             )}
           </button>
