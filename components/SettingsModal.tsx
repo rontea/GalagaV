@@ -199,26 +199,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
     });
   };
 
-  const handleDownloadSampleZip = async () => {
-    try {
-      const zip = new JSZip();
-      zip.file("manifest.json", JSON.stringify(JIRA_MANIFEST, null, 2));
-      zip.file("index.js", JIRA_JS);
-      zip.file("style.css", JIRA_CSS);
-      const blob = await zip.generateAsync({ type: "blob" });
-      const href = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = href;
-      link.download = "jira-theme-plugin-complete.zip";
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(href);
-    } catch (err) {
-      console.error("Failed to generate sample zip", err);
-    }
-  };
-
   const handleZipUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -371,12 +351,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                             />
                             <button className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold uppercase shadow-sm pointer-events-none">
                                 Select Zip
-                            </button>
-                             <button 
-                                onClick={(e) => { e.stopPropagation(); handleDownloadSampleZip(); }}
-                                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded text-xs font-bold uppercase shadow-sm hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-2 pointer-events-auto relative z-30"
-                            >
-                                <Download size={14} /> Download Sample
                             </button>
                         </div>
                     </>
