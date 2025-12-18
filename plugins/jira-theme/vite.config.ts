@@ -1,3 +1,4 @@
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -7,7 +8,7 @@ export default defineConfig({
     lib: {
       entry: './src/index.tsx',
       name: 'GalagaPlugin_JiraTheme',
-      fileName: (format) => `index.js`,
+      fileName: () => `index.js`,
       formats: ['umd']
     },
     rollupOptions: {
@@ -20,8 +21,8 @@ export default defineConfig({
         },
         name: 'GalagaPlugin_JiraTheme',
         assetFileNames: (assetInfo) => {
-          if (assetInfo.name === 'style.css') return 'style.css';
-          return assetInfo.name as string;
+          if (assetInfo.name && assetInfo.name.endsWith('.css')) return 'style.css';
+          return assetInfo.name || 'assets/[name]-[hash][extname]';
         }
       }
     }

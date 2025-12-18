@@ -1,3 +1,4 @@
+
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
@@ -18,39 +19,72 @@ const galagaSystemPlugin = () => ({
 
         if (fs.existsSync(pluginsDir)) {
           try {
-            const entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
-            for (const entry of entries) {
-              if (entry.isDirectory()) {
-                const publicDir = path.join(pluginsDir, entry.name, 'public');
-                const manifestPath = path.join(publicDir, 'manifest.json');
+            const pluginFolders = fs.readdirSync(pluginsDir, { withFileTypes: true });
+            
+            for (const folder of pluginFolders) {
+              if (folder.isDirectory()) {
+                const pluginPath = path.join(pluginsDir, folder.name);
                 
-                if (fs.existsSync(manifestPath)) {
+                // Search for manifest.json in root, public, or dist
+                const searchPaths = [
+                    path.join(pluginPath, 'public', 'manifest.json'),
+                    path.join(pluginPath, 'dist', 'manifest.json'),
+                    path.join(pluginPath, 'manifest.json')
+                ];
+
+                let manifestPath = searchPaths.find(p => fs.existsSync(p));
+                
+                if (manifestPath) {
                   try {
                     const manifestContent = fs.readFileSync(manifestPath, 'utf-8');
                     const manifest = JSON.parse(manifestContent);
+                    const manifestBaseDir = path.dirname(manifestPath);
                     const files: Record<string, string> = {};
                     
-                    const readFile = (filename: string, mime: string) => {
-                        const filePath = path.join(publicDir, filename);
-                        if (fs.existsSync(filePath)) {
-                            const content = fs.readFileSync(filePath, 'utf-8');
-                            const b64 = (globalThis as any).Buffer.from(content).toString('base64');
-                            files[filename] = `data:${mime};base64,${b64}`;
+                    const tryReadFile = (filename: string, mime: string) => {
+                        // 1. Try relative to manifest
+                        let filePath = path.join(manifestBaseDir, filename);
+                        
+                        // 2. Fallback: try relative to plugin root
+                        if (!fs.existsSync(filePath)) {
+                            filePath = path.join(pluginPath, filename);
                         }
+                        
+                        // 3. Fallback: try in dist or public if manifest was elsewhere
+                        if (!fs.existsSync(filePath)) {
+                            const altPaths = [
+                                path.join(pluginPath, 'dist', filename),
+                                path.join(pluginPath, 'public', filename),
+                                path.join(pluginPath, 'src', filename) // support dev src
+                            ];
+                            filePath = altPaths.find(p => fs.existsSync(p)) || filePath;
+                        }
+
+                        if (fs.existsSync(filePath)) {
+                            const content = fs.readFileSync(filePath);
+                            const b64 = content.toString('base64');
+                            files[filename] = `data:${mime};base64,${b64}`;
+                            return true;
+                        }
+                        return false;
                     };
 
-                    if (manifest.main) readFile(manifest.main, 'text/javascript');
-                    if (manifest.style) readFile(manifest.style, 'text/css');
+                    const mainFound = manifest.main ? tryReadFile(manifest.main, 'text/javascript') : false;
+                    const styleFound = manifest.style ? tryReadFile(manifest.style, 'text/css') : false;
 
-                    loadedPlugins.push({
-                        id: manifest.id,
-                        folderName: entry.name, // Tracking actual folder name for deletion precision
-                        manifest: manifest,
-                        files: files,
-                        enabled: false
-                    });
+                    if (mainFound) {
+                        loadedPlugins.push({
+                            id: manifest.id,
+                            folderName: folder.name,
+                            manifest: manifest,
+                            files: files,
+                            enabled: false
+                        });
+                    } else {
+                        console.warn(`[SYSTEM] Plugin '${manifest.name}' ignored: Main entry file '${manifest.main}' not found.`);
+                    }
                   } catch (e) {
-                    console.error(`Error loading plugin ${entry.name}:`, e);
+                    console.error(`Error loading plugin ${folder.name}:`, e);
                   }
                 }
               }
@@ -72,7 +106,7 @@ const galagaSystemPlugin = () => ({
         req.on('end', () => {
             try {
                 const { id, manifest, files } = JSON.parse(body);
-                if (!id || !manifest) throw new Error("Missing ID or Manifest");
+                if (!id || !manifest) throw new Error("Missing ID or Manifest data in payload");
 
                 const safeId = id.replace(/[^a-zA-Z0-9.-]/g, '_');
                 const pluginDir = path.join(pluginsDir, safeId);
@@ -83,20 +117,24 @@ const galagaSystemPlugin = () => ({
                 }
                 
                 fs.mkdirSync(publicDir, { recursive: true });
+                
+                // Write Manifest
                 fs.writeFileSync(path.join(publicDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
+                // Write Files
                 if (files) {
                     for (const [filename, content] of Object.entries(files)) {
                         const safeName = path.basename(filename);
                         fs.writeFileSync(path.join(publicDir, safeName), content as string);
+                        console.log(`[SYSTEM] Written asset to disk: ${safeName}`);
                     }
                 }
 
-                console.log(`\x1b[32m [SYSTEM] Plugin installed: ${safeId} \x1b[0m`);
+                console.log(`\x1b[32m [SYSTEM] Plugin installed successfully: ${safeId} \x1b[0m`);
                 res.statusCode = 200;
                 res.end(JSON.stringify({ success: true }));
             } catch (e: any) {
-                console.error("Upload failed:", e);
+                console.error("[SYSTEM] Upload failed:", e);
                 res.statusCode = 500;
                 res.end(JSON.stringify({ error: e.message }));
             }
@@ -113,36 +151,41 @@ const galagaSystemPlugin = () => ({
           if (pluginId) {
             console.log(`\n\x1b[41m\x1b[37m [SYSTEM] DESTRUCTION REQUEST FOR: ${pluginId} \x1b[0m`);
             
-            // 1. Send acknowledgement
             res.setHeader('Content-Type', 'application/json');
             res.statusCode = 200;
             res.end(JSON.stringify({ status: 'halting', id: pluginId }));
             
-            // 2. Schedule Halt
             setTimeout(async () => {
                try {
                    console.log(`\x1b[33m [SERVER] Releasing file watchers... \x1b[0m`);
                    await server.close(); 
 
-                   // 3. Scan for the specific folder belonging to this ID
-                   // We don't rely solely on sanitized ID; we look for the manifest.
                    let targetPath: string | null = null;
                    
                    if (fs.existsSync(pluginsDir)) {
                        const entries = fs.readdirSync(pluginsDir);
                        for (const folder of entries) {
-                           const mPath = path.join(pluginsDir, folder, 'public', 'manifest.json');
-                           if (fs.existsSync(mPath)) {
-                               const mData = JSON.parse(fs.readFileSync(mPath, 'utf-8'));
-                               if (mData.id === pluginId) {
-                                   targetPath = path.join(pluginsDir, folder);
-                                   break;
+                           const pluginFolderPath = path.join(pluginsDir, folder);
+                           // Check multiple manifest locations for the ID
+                           const possibleManifests = [
+                               path.join(pluginFolderPath, 'public', 'manifest.json'),
+                               path.join(pluginFolderPath, 'dist', 'manifest.json'),
+                               path.join(pluginFolderPath, 'manifest.json')
+                           ];
+
+                           for (const mPath of possibleManifests) {
+                               if (fs.existsSync(mPath)) {
+                                   const mData = JSON.parse(fs.readFileSync(mPath, 'utf-8'));
+                                   if (mData.id === pluginId) {
+                                       targetPath = pluginFolderPath;
+                                       break;
+                                   }
                                }
                            }
+                           if (targetPath) break;
                        }
                    }
 
-                   // Fallback: use sanitized ID logic if manifest scan failed
                    if (!targetPath) {
                        const safeId = pluginId.replace(/[^a-zA-Z0-9.-]/g, '_');
                        targetPath = path.join(pluginsDir, safeId);
@@ -151,16 +194,9 @@ const galagaSystemPlugin = () => ({
                    console.log(`\x1b[33m [DISK] Absolute Target: ${targetPath} \x1b[0m`);
                    
                    if (fs.existsSync(targetPath)) {
-                      await new Promise(r => setTimeout(r, 1000)); // Buffer for OS file locks
-                      
-                      // Aggressive removal
+                      await new Promise(r => setTimeout(r, 1000));
                       fs.rmSync(targetPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
-                      
-                      if (!fs.existsSync(targetPath)) {
-                        console.log(`\x1b[32m [DISK] SUCCESS: Deleted ${targetPath} \x1b[0m`);
-                      } else {
-                        console.error(`\x1b[31m [ERROR] Directory still exists after deletion attempt. \x1b[0m`);
-                      }
+                      console.log(`\x1b[32m [DISK] SUCCESS: Deleted ${targetPath} \x1b[0m`);
                    } else {
                       console.log(`\x1b[33m [DISK] Target path not found. Already clean. \x1b[0m`);
                    }

@@ -1,9 +1,11 @@
+
 {
   "id": "com.galagav.theme.jira",
-  "name": "Professional Jira Theme",
-  "version": "1.0.0",
-  "description": "Transforms the dashboard into a professional, blue-scale enterprise interface.",
+  "name": "Jira Management Console",
+  "version": "1.1.0",
+  "description": "An enterprise-grade theme and management dashboard for technical protocols.",
   "main": "index.js",
   "style": "style.css",
-  "globalVar": "GalagaPlugin_JiraTheme"
+  "globalVar": "GalagaPlugin_JiraTheme",
+  "type": "tool"
 }

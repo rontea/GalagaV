@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Settings, X, Terminal, Circle, Plus, Trash2, Power, AlertCircle, Upload, Package, FileCode, RefreshCw, Download, HardDrive, Check, Ban, Loader2, Play, Eye, Skull } from 'lucide-react';
 import { GlobalConfig, PluginConfig, PluginManifest } from '../types';
 import { FULL_ICON_MAP, DEFAULT_PROJECT_KEYS, DEFAULT_STATUS_KEYS } from './ProjectList';
-import { getJiraPlugin, JIRA_CSS, JIRA_JS, JIRA_MANIFEST } from '../data/defaultPlugins';
+import { getJiraPlugin } from '../data/defaultPlugins';
 import JSZip from 'jszip';
 
 interface SettingsModalProps {
@@ -141,14 +141,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
         setTargetPluginId(id);
         setShutdownState('stopping');
         
-        // 1. Scrub from local storage immediately so it's gone after reboot
         try {
-            // Remove from blocked list
             const newBlocked = blockedPlugins.filter((bid: string) => bid !== id);
             setBlockedPlugins(newBlocked);
             localStorage.setItem('galaga_blocked_plugins', JSON.stringify(newBlocked));
 
-            // Add to destroyed list so it never reappears in Repository
             const newDestroyed = [...destroyedPlugins, id];
             setDestroyedPlugins(newDestroyed);
             localStorage.setItem('galaga_destroyed_plugins', JSON.stringify(newDestroyed));
@@ -167,14 +164,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
             console.error("Storage cleanup error:", e);
         }
 
-        // 2. Call Backend for disk destruction
         try {
             await fetch(`/__system/destroy-plugin?id=${encodeURIComponent(id)}`, { method: 'POST' });
         } catch (e) {
             console.log("Destruction request acknowledged (server halting).");
         }
             
-        // 3. UI Sequence
         setTimeout(() => {
             setShutdownState('stopped');
             setTimeout(() => {
@@ -210,26 +205,44 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
         const zip = new JSZip();
         const content = await zip.loadAsync(file);
 
-        const manifestFile = content.file("manifest.json");
-        if (!manifestFile) throw new Error("Invalid Plugin: Missing 'manifest.json'");
+        // 1. Find manifest.json (could be nested)
+        let manifestEntry: JSZip.JSZipObject | null = null;
+        zip.forEach((relativePath, zipFile) => {
+            if (relativePath.endsWith('manifest.json')) {
+                manifestEntry = zipFile;
+            }
+        });
 
-        const manifestStr = await manifestFile.async("string");
+        if (!manifestEntry) throw new Error("Invalid Plugin: Missing 'manifest.json' anywhere in the package.");
+
+        // @ts-ignore - manifestEntry is definitely not null here
+        const manifestStr = await manifestEntry.async("string");
         const manifest = JSON.parse(manifestStr);
+        // @ts-ignore
+        const manifestPath = manifestEntry.name;
+        const basePath = manifestPath.substring(0, manifestPath.lastIndexOf('/') + 1);
 
         if (!manifest.id || !manifest.name || !manifest.main || !manifest.globalVar) {
-            throw new Error("Invalid Manifest: Missing required fields.");
+            throw new Error("Invalid Manifest: Missing required fields (id, name, main, globalVar).");
         }
 
         const filesPayload: Record<string, string> = {};
-        const mainContent = await (content.file(manifest.main)?.async("string"));
-        if (!mainContent) throw new Error(`Entry file '${manifest.main}' not found.`);
-        filesPayload[manifest.main] = mainContent;
+        
+        // 2. Extract Main JS relative to manifest
+        const mainEntry = zip.file(basePath + manifest.main);
+        if (!mainEntry) throw new Error(`Entry file '${manifest.main}' not found at path: ${basePath}`);
+        
+        filesPayload[manifest.main] = await mainEntry.async("string");
 
+        // 3. Extract Optional CSS relative to manifest
         if (manifest.style) {
-            const styleContent = await (content.file(manifest.style)?.async("string"));
-            if (styleContent) filesPayload[manifest.style] = styleContent;
+            const styleEntry = zip.file(basePath + manifest.style);
+            if (styleEntry) {
+                filesPayload[manifest.style] = await styleEntry.async("string");
+            }
         }
 
+        // 4. Send to Backend
         const response = await fetch('/__system/upload-plugin', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -240,9 +253,11 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
             })
         });
 
-        if (!response.ok) throw new Error("Upload failed");
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || "Backend upload failed");
+        }
 
-        // If it was blocked or destroyed, clear those flags on re-upload
         const newBlocked = blockedPlugins.filter(id => id !== manifest.id);
         setBlockedPlugins(newBlocked);
         localStorage.setItem('galaga_blocked_plugins', JSON.stringify(newBlocked));
@@ -254,6 +269,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
         fetchPlugins();
 
     } catch (err: any) {
+        console.error("Plugin Processing Error:", err);
         setUploadError(err.message || "Failed to process plugin file.");
     } finally {
         setIsProcessing(false);
@@ -314,7 +330,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
   };
 
   const renderPlugins = () => {
-    // Repository plugins: verified to be on disk AND not blocked AND not destroyed
     const repoPlugins = diskPlugins.filter(p => !blockedPlugins.includes(p.id) && !destroyedPlugins.includes(p.id));
 
     return (
@@ -325,7 +340,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                     <div>
                         <strong>Plugin Manager:</strong> 
                         <br/>
-                        Plugins are sandboxed React components. You can install official default plugins or upload your own <code>.zip</code> bundles.
+                        Upload a <code>.zip</code> file containing your built UMD assets. The manifest and entry file will be automatically identified.
                     </div>
                 </div>
             </div>
@@ -334,13 +349,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                 {isProcessing ? (
                      <div className="flex flex-col items-center justify-center py-4">
                         <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mb-2"></div>
-                        <span className="text-xs font-bold uppercase text-slate-500">Extracting & Uploading...</span>
+                        <span className="text-xs font-bold uppercase text-slate-500">Extracting & Identifying...</span>
                      </div>
                 ) : (
                     <>
                         <Upload size={32} className="mx-auto text-slate-400 mb-2" />
-                        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Upload New Plugin</h3>
-                        <p className="text-xs text-slate-500 mb-4">Drag and drop a <strong>.zip</strong> file here or click to browse.</p>
+                        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Upload Plugin Zip</h3>
+                        <p className="text-xs text-slate-500 mb-4">Files inside the zip should be flat (no subfolders preferred).</p>
                         
                         <div className="flex justify-center gap-3 relative z-20">
                             <input 
@@ -350,13 +365,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                             />
                             <button className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold uppercase shadow-sm pointer-events-none">
-                                Select Zip
+                                Select File
                             </button>
                         </div>
                     </>
                 )}
                 {uploadError && (
-                    <div className="mt-4 p-2 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 text-xs rounded border border-rose-200 dark:border-rose-900 font-mono">
+                    <div className="mt-4 p-3 bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 text-xs rounded border border-rose-200 dark:border-rose-900 font-mono text-left">
+                        <strong>Upload Error:</strong><br/>
                         {uploadError}
                     </div>
                 )}
@@ -365,16 +381,16 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
             <div className="space-y-2">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
                      <span className="text-xs font-bold uppercase text-slate-500 flex items-center gap-2">
-                        <Terminal size={14} /> Installed Plugins
+                        <Terminal size={14} /> Installed Modules
                      </span>
                 </div>
                 {(config.plugins || []).length === 0 && (
-                    <p className="text-center text-xs text-slate-400 italic py-4">No plugins installed.</p>
+                    <p className="text-center text-xs text-slate-400 italic py-4">No active plugins.</p>
                 )}
                 {(config.plugins || []).map(plugin => {
                     const isTheme = plugin.manifest.type === 'theme';
                     return (
-                        <div key={plugin.id} className="flex items-center justify-between p-3 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm animate-in fade-in slide-in-from-right-2">
+                        <div key={plugin.id} className="flex items-center justify-between p-3 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm">
                             <div className="flex items-center gap-3">
                                 <div className={`p-2 rounded-full ${plugin.enabled ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
                                     <Power size={14} />
@@ -414,7 +430,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
             <div className="space-y-2 pt-4">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
                      <span className="text-xs font-bold uppercase text-slate-500 flex items-center gap-2">
-                        <HardDrive size={14} /> Local Repository (plugins/)
+                        <HardDrive size={14} /> Local Repository
                      </span>
                 </div>
                 {repoPlugins.length === 0 ? (
@@ -464,7 +480,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                 <div className="space-y-2 pt-8 border-t border-slate-200 dark:border-slate-800">
                     <div className="flex items-center justify-between pb-2">
                         <span className="text-xs font-bold uppercase text-slate-400 flex items-center gap-2">
-                            <Ban size={14} /> Blocked / Deleted Plugins
+                            <Ban size={14} /> Trash / Blocked
                         </span>
                     </div>
                     {blockedPlugins.map(bid => {
@@ -477,7 +493,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                                     </div>
                                     <div>
                                         <h4 className="text-sm font-bold text-slate-600 dark:text-slate-400">{knownPlugin ? knownPlugin.manifest.name : bid}</h4>
-                                        <p className="text-[10px] text-slate-400">Archived from active protocols.</p>
+                                        <p className="text-[10px] text-slate-400">Permanently hidden from view.</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
@@ -491,7 +507,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                                         onClick={() => handleHardDeletePlugin(bid)}
                                         className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-800 text-rose-500 hover:text-rose-700 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold uppercase transition-colors"
                                     >
-                                        <Skull size={12} /> Destroy
+                                        <Skull size={12} /> Scrub Disk
                                     </button>
                                 </div>
                             </div>
