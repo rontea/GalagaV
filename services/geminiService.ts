@@ -1,20 +1,18 @@
 import { GoogleGenAI } from "@google/genai";
 
-const apiKey = typeof process !== 'undefined' ? process.env.API_KEY : undefined;
-let ai: GoogleGenAI | null = null;
-
-if (apiKey) {
-  ai = new GoogleGenAI({ apiKey });
-}
+// Always initialize the client using the environment variable as per guidelines
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
 export const generatePilotCallsign = async (pilotName: string): Promise<string> => {
-  if (!ai) {
+  // Proactive check for the API key hard requirement
+  if (!process.env.API_KEY) {
     console.warn("Gemini API Key missing. Returning fallback.");
     return "MAVERICK";
   }
 
   try {
-    const model = 'gemini-2.5-flash';
+    // Select the recommended 'gemini-3-flash-preview' for basic text tasks
+    const model = 'gemini-3-flash-preview';
     const prompt = `
       Generate a single, cool, 80s arcade-style sci-fi pilot callsign for a player named "${pilotName || 'Player'}". 
       Strict rules:
@@ -24,14 +22,16 @@ export const generatePilotCallsign = async (pilotName: string): Promise<string> 
       4. Return ONLY the callsign string.
     `;
 
+    // Use ai.models.generateContent to query the model with the prompt
     const response = await ai.models.generateContent({
       model,
       contents: prompt,
       config: {
-        thinkingConfig: { thinkingBudget: 0 } // Fast response needed for UI
+        thinkingConfig: { thinkingBudget: 0 } // Fast response needed for UI, thinking is supported for Gemini 3
       }
     });
 
+    // Access the .text property directly from the GenerateContentResponse object
     const text = response.text?.trim().toUpperCase() || "STARFIGHTER";
     // Clean up any accidental extra chars
     return text.replace(/[^A-Z0-9-]/g, '').substring(0, 10);

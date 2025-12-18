@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Settings, X, Terminal, Circle, Plus, Trash2, Power, AlertCircle, Upload, Package, FileCode, RefreshCw, Download, HardDrive, Check, Ban, Loader2, Play, Eye, Skull } from 'lucide-react';
 import { GlobalConfig, PluginConfig, PluginManifest } from '../types';
@@ -21,9 +22,14 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
   const [shutdownState, setShutdownState] = useState<'none' | 'stopping' | 'stopped' | 'booting'>('none');
   const [targetPluginId, setTargetPluginId] = useState<string | null>(null);
 
-  // State for blocked plugins (using state setter for instant UI updates)
+  // State for blocked plugins
   const [blockedPlugins, setBlockedPlugins] = useState<string[]>(() => 
     JSON.parse(localStorage.getItem('galaga_blocked_plugins') || '[]')
+  );
+
+  // State for destroyed plugins (permanently hidden)
+  const [destroyedPlugins, setDestroyedPlugins] = useState<string[]>(() => 
+    JSON.parse(localStorage.getItem('galaga_destroyed_plugins') || '[]')
   );
 
   // State for plugins actually available on disk (verified by backend)
@@ -37,35 +43,42 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
   }, [isOpen, activeTab]);
 
   const fetchPlugins = () => {
-     // Add timestamp to prevent caching
      fetch(`/__system/list-plugins?t=${Date.now()}`)
         .then(res => {
             if (!res.ok) throw new Error("System endpoint missing");
             return res.json();
         })
         .then((serverPlugins: PluginConfig[]) => {
-            // Merge Server Plugins with In-Memory Defaults
             const defaultPlugins = [getJiraPlugin()];
             const combinedMap = new Map<string, PluginConfig>();
+            
+            // Filter out destroyed plugins from the repository fetch
+            const currentDestroyed = JSON.parse(localStorage.getItem('galaga_destroyed_plugins') || '[]');
+            
+            defaultPlugins.forEach(p => {
+              if (!currentDestroyed.includes(p.id)) {
+                combinedMap.set(p.id, p);
+              }
+            });
 
-            // 1. Add Defaults
-            defaultPlugins.forEach(p => combinedMap.set(p.id, p));
-
-            // 2. Add/Override with Server Plugins
-            serverPlugins.forEach(p => combinedMap.set(p.id, p));
-
+            serverPlugins.forEach(p => {
+              if (!currentDestroyed.includes(p.id)) {
+                combinedMap.set(p.id, p);
+              }
+            });
+            
             setDiskPlugins(Array.from(combinedMap.values()));
         })
         .catch(err => {
-            console.warn("Plugin system offline (likely static build), falling back to defaults.", err);
-            // Fallback: If backend is dead, show JIRA default
-            setDiskPlugins([getJiraPlugin()]);
+            console.warn("Plugin system offline, falling back to defaults.", err);
+            const currentDestroyed = JSON.parse(localStorage.getItem('galaga_destroyed_plugins') || '[]');
+            const defaults = [getJiraPlugin()].filter(p => !currentDestroyed.includes(p.id));
+            setDiskPlugins(defaults);
         });
   };
 
   if (!isOpen && shutdownState === 'none') return null;
 
-  // --- Icon Handlers ---
   const handleAddIcon = (type: 'project' | 'status', key: string) => {
     if (type === 'project') {
       if (!config.projectIcons.includes(key)) {
@@ -85,8 +98,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
       onUpdateConfig({ ...config, statusIcons: config.statusIcons.filter(k => k !== key) });
     }
   };
-
-  // --- Plugin Handlers (Zip Based) ---
 
   const handleTogglePlugin = (id: string) => {
     const updatedPlugins = (config.plugins || []).map(p => 
@@ -130,32 +141,43 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
         setTargetPluginId(id);
         setShutdownState('stopping');
         
-        // 1. Remove from local states instantly for feedback
-        setDiskPlugins(prev => prev.filter(p => p.id !== id));
+        // 1. Scrub from local storage immediately so it's gone after reboot
         try {
+            // Remove from blocked list
             const newBlocked = blockedPlugins.filter((bid: string) => bid !== id);
             setBlockedPlugins(newBlocked);
             localStorage.setItem('galaga_blocked_plugins', JSON.stringify(newBlocked));
+
+            // Add to destroyed list so it never reappears in Repository
+            const newDestroyed = [...destroyedPlugins, id];
+            setDestroyedPlugins(newDestroyed);
+            localStorage.setItem('galaga_destroyed_plugins', JSON.stringify(newDestroyed));
+
+            const currentConfigStr = localStorage.getItem('galaga_global_config_v1');
+            if (currentConfigStr) {
+                const currentConfig = JSON.parse(currentConfigStr) as GlobalConfig;
+                const updatedPlugins = (currentConfig.plugins || []).filter(p => p.id !== id);
+                localStorage.setItem('galaga_global_config_v1', JSON.stringify({ ...currentConfig, plugins: updatedPlugins }));
+            }
+            
+            const syncedPlugins = (config.plugins || []).filter(p => p.id !== id);
+            onUpdateConfig({ ...config, plugins: syncedPlugins });
+
         } catch (e) {
-            console.error("Critical storage error:", e);
+            console.error("Storage cleanup error:", e);
         }
 
-        // 2. Call Backend to Delete File (Wait for response before UI sequence continues)
+        // 2. Call Backend for disk destruction
         try {
-            // Encode the ID to handle special chars like '@', '/', etc.
             await fetch(`/__system/destroy-plugin?id=${encodeURIComponent(id)}`, { method: 'POST' });
         } catch (e) {
-            console.log("Request sent, possibly killed by server shutdown.");
+            console.log("Destruction request acknowledged (server halting).");
         }
             
-        // 3. Start UI Simulation Sequence (Visuals for the user while server dies)
-        // We delay slightly to allow the backend log to print
+        // 3. UI Sequence
         setTimeout(() => {
-            console.log('%c [SYSTEM] Server stopped.', 'color: gray;');
             setShutdownState('stopped');
-            
             setTimeout(() => {
-                 console.log('%c [BOOT] Attempting restart...', 'color: green;');
                  window.location.reload(); 
             }, 3000);
         }, 2000);
@@ -183,8 +205,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
       zip.file("manifest.json", JSON.stringify(JIRA_MANIFEST, null, 2));
       zip.file("index.js", JIRA_JS);
       zip.file("style.css", JIRA_CSS);
-      // ... (Rest of zip logic omitted for brevity, same as before) ...
-      // Generate Blob
       const blob = await zip.generateAsync({ type: "blob" });
       const href = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -196,7 +216,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
       URL.revokeObjectURL(href);
     } catch (err) {
       console.error("Failed to generate sample zip", err);
-      alert("Error generating sample zip file.");
     }
   };
 
@@ -212,33 +231,22 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
         const content = await zip.loadAsync(file);
 
         const manifestFile = content.file("manifest.json");
-        if (!manifestFile) throw new Error("Invalid Plugin: Missing 'manifest.json' in the root of the zip file.");
+        if (!manifestFile) throw new Error("Invalid Plugin: Missing 'manifest.json'");
 
         const manifestStr = await manifestFile.async("string");
-        let manifest: PluginManifest;
-        try {
-            manifest = JSON.parse(manifestStr);
-        } catch (e) {
-            throw new Error("Invalid Plugin: 'manifest.json' is not valid JSON.");
-        }
+        const manifest = JSON.parse(manifestStr);
 
         if (!manifest.id || !manifest.name || !manifest.main || !manifest.globalVar) {
-            throw new Error("Invalid Manifest: Missing required fields (id, name, main, globalVar).");
+            throw new Error("Invalid Manifest: Missing required fields.");
         }
 
         const filesPayload: Record<string, string> = {};
-        const readZipText = async (filename: string) => {
-            const f = content.file(filename);
-            if (f) return await f.async("string");
-            return null;
-        };
-
-        const mainContent = await readZipText(manifest.main);
-        if (!mainContent) throw new Error(`Entry file '${manifest.main}' not found in zip.`);
+        const mainContent = await (content.file(manifest.main)?.async("string"));
+        if (!mainContent) throw new Error(`Entry file '${manifest.main}' not found.`);
         filesPayload[manifest.main] = mainContent;
 
         if (manifest.style) {
-            const styleContent = await readZipText(manifest.style);
+            const styleContent = await (content.file(manifest.style)?.async("string"));
             if (styleContent) filesPayload[manifest.style] = styleContent;
         }
 
@@ -252,22 +260,20 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
             })
         });
 
-        if (!response.ok) {
-            const errData = await response.json();
-            throw new Error(errData.error || "Upload failed");
-        }
+        if (!response.ok) throw new Error("Upload failed");
 
-        if (blockedPlugins.includes(manifest.id)) {
-            const newBlocked = blockedPlugins.filter(id => id !== manifest.id);
-            setBlockedPlugins(newBlocked);
-            localStorage.setItem('galaga_blocked_plugins', JSON.stringify(newBlocked));
-        }
+        // If it was blocked or destroyed, clear those flags on re-upload
+        const newBlocked = blockedPlugins.filter(id => id !== manifest.id);
+        setBlockedPlugins(newBlocked);
+        localStorage.setItem('galaga_blocked_plugins', JSON.stringify(newBlocked));
 
-        alert(`Plugin "${manifest.name}" uploaded to Repository successfully!`);
+        const newDestroyed = destroyedPlugins.filter(id => id !== manifest.id);
+        setDestroyedPlugins(newDestroyed);
+        localStorage.setItem('galaga_destroyed_plugins', JSON.stringify(newDestroyed));
+
         fetchPlugins();
 
     } catch (err: any) {
-        console.error("Plugin Upload Error:", err);
         setUploadError(err.message || "Failed to process plugin file.");
     } finally {
         setIsProcessing(false);
@@ -275,7 +281,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
     }
   };
 
-  // --- Render Helpers ---
   const renderIconGrid = (type: 'project' | 'status') => {
     const activeKeys = type === 'project' ? config.projectIcons : config.statusIcons;
     const defaultKeys = type === 'project' ? DEFAULT_PROJECT_KEYS : DEFAULT_STATUS_KEYS;
@@ -329,7 +334,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
   };
 
   const renderPlugins = () => {
-    const repoPlugins = diskPlugins.filter(p => !blockedPlugins.includes(p.id));
+    // Repository plugins: verified to be on disk AND not blocked AND not destroyed
+    const repoPlugins = diskPlugins.filter(p => !blockedPlugins.includes(p.id) && !destroyedPlugins.includes(p.id));
 
     return (
         <div className="space-y-8">
@@ -344,7 +350,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                 </div>
             </div>
 
-            {/* Install Area */}
             <div className="p-6 bg-slate-50 dark:bg-slate-900/50 rounded-lg border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-cyan-500 dark:hover:border-cyan-500 transition-colors text-center relative">
                 {isProcessing ? (
                      <div className="flex flex-col items-center justify-center py-4">
@@ -383,7 +388,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                 )}
             </div>
 
-            {/* Installed List */}
             <div className="space-y-2">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
                      <span className="text-xs font-bold uppercase text-slate-500 flex items-center gap-2">
@@ -395,7 +399,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                 )}
                 {(config.plugins || []).map(plugin => {
                     const isTheme = plugin.manifest.type === 'theme';
-
                     return (
                         <div key={plugin.id} className="flex items-center justify-between p-3 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm animate-in fade-in slide-in-from-right-2">
                             <div className="flex items-center gap-3">
@@ -405,15 +408,12 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                                 <div>
                                     <h4 className={`text-sm font-bold ${plugin.enabled ? 'text-slate-900 dark:text-white' : 'text-slate-400'}`}>
                                         {plugin.manifest?.name || plugin.id} 
-                                        <span className="text-[10px] text-slate-400 font-normal ml-2">v{plugin.manifest?.version || '0.0.0'}</span>
-                                        <span className={`ml-2 text-[9px] uppercase px-1.5 py-0.5 rounded border ${isTheme ? 'bg-fuchsia-50 text-fuchsia-600 border-fuchsia-200 dark:bg-fuchsia-900/30 dark:text-fuchsia-400 dark:border-fuchsia-900' : 'bg-blue-50 text-blue-600 border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-900'}`}>
+                                        <span className={`ml-2 text-[9px] uppercase px-1.5 py-0.5 rounded border ${isTheme ? 'bg-fuchsia-50 text-fuchsia-600 border-fuchsia-200' : 'bg-blue-50 text-blue-600 border-blue-200'}`}>
                                             {isTheme ? 'Theme' : 'Tool'}
                                         </span>
                                     </h4>
                                     <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                                        <FileCode size={10} />
                                         <code>{plugin.manifest?.main}</code>
-                                        {plugin.manifest?.style && <span className="text-indigo-500">+ Styles</span>}
                                     </div>
                                 </div>
                             </div>
@@ -424,16 +424,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                                 >
                                     {plugin.enabled ? 'Active' : 'Disabled'}
                                 </button>
-                                
                                 <button 
                                     onClick={() => handleDeletePlugin(plugin.id)}
                                     disabled={plugin.enabled}
-                                    className={`p-2 transition-colors rounded ${
-                                        plugin.enabled 
-                                        ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed' 
-                                        : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30'
-                                    }`}
-                                    title={plugin.enabled ? "Disable plugin to uninstall" : "Uninstall (Remove from active list)"}
+                                    className={`p-2 rounded ${plugin.enabled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-rose-500'}`}
                                 >
                                     <Trash2 size={16} />
                                 </button>
@@ -443,7 +437,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                 })}
             </div>
 
-            {/* Plugin Repository (Local Defaults) */}
             <div className="space-y-2 pt-4">
                 <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
                      <span className="text-xs font-bold uppercase text-slate-500 flex items-center gap-2">
@@ -451,7 +444,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                      </span>
                 </div>
                 {repoPlugins.length === 0 ? (
-                    <p className="text-center text-xs text-slate-400 italic py-4">Repository is empty or all defaults have been permanently deleted.</p>
+                    <p className="text-center text-xs text-slate-400 italic py-4">Repository is empty.</p>
                 ) : (
                     repoPlugins.map(repoPlugin => {
                         const isInstalled = (config.plugins || []).some(p => p.id === repoPlugin.id);
@@ -462,15 +455,13 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                                         <Package size={14} />
                                     </div>
                                     <div>
-                                        <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                                            {repoPlugin.manifest.name}
-                                        </h4>
+                                        <h4 className="text-sm font-bold text-slate-700 dark:text-slate-300">{repoPlugin.manifest.name}</h4>
                                         <p className="text-xs text-slate-500">{repoPlugin.manifest.description}</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     {isInstalled ? (
-                                        <span className="flex items-center gap-1 text-[10px] font-bold uppercase text-emerald-600 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-900/20 rounded">
+                                        <span className="flex items-center gap-1 text-[10px] font-bold uppercase text-emerald-600 px-3 py-1.5 bg-emerald-50 rounded">
                                             <Check size={12} /> Installed
                                         </span>
                                     ) : (
@@ -481,16 +472,10 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                                             Install
                                         </button>
                                     )}
-                                    
                                     <button 
                                         onClick={() => handleSoftBlockPlugin(repoPlugin.id)}
                                         disabled={isInstalled}
-                                        className={`p-2 transition-colors rounded ${
-                                            isInstalled
-                                            ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
-                                            : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30'
-                                        }`}
-                                        title={isInstalled ? "Uninstall first to delete" : "Delete (Move to Trash)"}
+                                        className={`p-2 rounded ${isInstalled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-400 hover:text-rose-600'}`}
                                     >
                                         <Trash2 size={16} />
                                     </button>
@@ -501,7 +486,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                 )}
             </div>
 
-            {/* Blocked/Ignored Plugins */}
             {blockedPlugins.length > 0 && (
                 <div className="space-y-2 pt-8 border-t border-slate-200 dark:border-slate-800">
                     <div className="flex items-center justify-between pb-2">
@@ -510,35 +494,30 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                         </span>
                     </div>
                     {blockedPlugins.map(bid => {
-                        // Try to resolve name from default known plugins or disk, otherwise just show ID
                         const knownPlugin = diskPlugins.find(p => p.id === bid) || [getJiraPlugin()].find(p => p.id === bid);
                         return (
-                            <div key={bid} className="flex items-center justify-between p-3 bg-rose-50 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 rounded-lg opacity-75 hover:opacity-100 transition-opacity">
+                            <div key={bid} className="flex items-center justify-between p-3 bg-rose-50 dark:bg-rose-950/10 border border-rose-100 dark:border-rose-900/30 rounded-lg">
                                 <div className="flex items-center gap-3">
                                     <div className="p-2 rounded-full bg-rose-100 dark:bg-rose-900/20 text-rose-500">
                                         <Ban size={14} />
                                     </div>
                                     <div>
-                                        <h4 className="text-sm font-bold text-slate-600 dark:text-slate-400">
-                                            {knownPlugin ? knownPlugin.manifest.name : bid}
-                                        </h4>
-                                        <p className="text-[10px] text-slate-400">Permanently blocked from auto-installation.</p>
+                                        <h4 className="text-sm font-bold text-slate-600 dark:text-slate-400">{knownPlugin ? knownPlugin.manifest.name : bid}</h4>
+                                        <p className="text-[10px] text-slate-400">Archived from active protocols.</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button 
                                         onClick={() => handleRestorePlugin(bid)}
-                                        className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-800 text-slate-500 hover:text-emerald-600 border border-slate-200 dark:border-slate-700 hover:border-emerald-500 rounded text-xs font-bold uppercase transition-colors"
-                                        title="Restore to Local Repository"
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-800 text-slate-500 hover:text-emerald-600 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold uppercase transition-colors"
                                     >
                                         <Eye size={12} /> Restore
                                     </button>
                                     <button 
                                         onClick={() => handleHardDeletePlugin(bid)}
-                                        className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-800 text-rose-500 hover:text-rose-700 border border-slate-200 dark:border-slate-700 hover:border-rose-500 rounded text-xs font-bold uppercase transition-colors"
-                                        title="Permanently Destroy (System Halt)"
+                                        className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-slate-800 text-rose-500 hover:text-rose-700 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold uppercase transition-colors"
                                     >
-                                        <Trash2 size={12} /> Destroy
+                                        <Skull size={12} /> Destroy
                                     </button>
                                 </div>
                             </div>
@@ -554,7 +533,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
     <>
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 dark:bg-black/70 backdrop-blur-sm animate-in fade-in" role="dialog">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col">
-            {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 flex-shrink-0">
             <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 font-mono">
                 <Settings size={18} className="text-cyan-600 dark:text-cyan-500" />
@@ -565,46 +543,39 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
             </button>
             </div>
 
-            {/* Tabs */}
             <div className="flex border-b border-slate-200 dark:border-slate-800 flex-shrink-0">
             <button 
                 onClick={() => setActiveTab('project')}
-                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === 'project' ? 'bg-slate-100 dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 border-b-2 border-cyan-500' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === 'project' ? 'bg-slate-100 dark:bg-slate-800 text-cyan-700 border-b-2 border-cyan-500' : 'text-slate-500'}`}
             >
                 Project Icons
             </button>
             <button 
                 onClick={() => setActiveTab('status')}
-                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === 'status' ? 'bg-slate-100 dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 border-b-2 border-cyan-500' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === 'status' ? 'bg-slate-100 dark:bg-slate-800 text-cyan-700 border-b-2 border-cyan-500' : 'text-slate-500'}`}
             >
                 Status Icons
             </button>
             <button 
                 onClick={() => setActiveTab('plugins')}
-                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === 'plugins' ? 'bg-slate-100 dark:bg-slate-800 text-fuchsia-700 dark:text-fuchsia-400 border-b-2 border-fuchsia-500' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider ${activeTab === 'plugins' ? 'bg-slate-100 dark:bg-slate-800 text-fuchsia-700 border-b-2 border-fuchsia-500' : 'text-slate-500'}`}
             >
                 Plugins
             </button>
             </div>
 
-            {/* Content */}
             <div className="p-6 bg-white dark:bg-slate-900 overflow-y-auto custom-scrollbar flex-1">
             {activeTab === 'plugins' ? renderPlugins() : renderIconGrid(activeTab)}
             </div>
 
-            {/* Footer */}
             <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/30 text-right flex-shrink-0">
-            <button 
-                onClick={onClose}
-                className="px-4 py-2 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-white text-xs font-bold uppercase rounded border border-slate-300 dark:border-slate-700"
-            >
+            <button onClick={onClose} className="px-4 py-2 bg-slate-200 dark:bg-slate-800 rounded text-xs font-bold uppercase">
                 Done
             </button>
             </div>
         </div>
         </div>
 
-        {/* Server Stop/Start Simulation Overlay */}
         {shutdownState !== 'none' && (
             <div className="fixed inset-0 z-[9999] bg-black text-white font-mono flex flex-col items-center justify-center p-8 cursor-wait">
                 {shutdownState === 'stopping' && (
@@ -612,37 +583,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
                         <Loader2 size={64} className="text-red-600 animate-spin mb-8" />
                         <h1 className="text-4xl font-bold mb-4 text-red-600 tracking-widest animate-pulse">SYSTEM HALT</h1>
                         <div className="text-left space-y-2 text-slate-400 font-mono text-sm w-96">
-                            <p className="animate-pulse">&gt; [SYSTEM] Received SIGTERM.</p>
-                            <p>&gt; [SERVER] Stopping localhost process...</p>
-                            <p>&gt; [DISK] Target identified: {targetPluginId}</p>
-                            <p className="text-red-500">&gt; [DISK] rm -rf /plugins/{targetPluginId}</p>
-                            <p className="text-white animate-pulse">&gt; [DISK] Writing changes to disk...</p>
-                        </div>
-                        <div className="w-96 h-1 bg-slate-900 mt-8 rounded-full overflow-hidden">
-                             <div className="h-full bg-red-600 animate-[width_2s_ease-in-out_infinite]" style={{ width: '100%' }}></div>
+                            <p className="animate-pulse">&gt; [SYSTEM] Initializing Wipe Protocol...</p>
+                            <p>&gt; [SERVER] Terminating file streams...</p>
+                            <p className="text-red-500">&gt; [DISK] Destroying: {targetPluginId}</p>
                         </div>
                     </>
                 )}
                 {shutdownState === 'stopped' && (
                      <>
-                        <div className="w-16 h-16 rounded-full border-4 border-slate-800 mb-8 relative">
-                            <div className="absolute inset-0 bg-slate-900 rounded-full"></div>
-                        </div>
+                        <div className="w-16 h-16 rounded-full border-4 border-slate-800 mb-8" />
                         <h1 className="text-4xl font-bold mb-4 text-slate-700 tracking-widest">SERVER STOPPED</h1>
-                        <p className="text-slate-600 font-mono text-sm">&gt; System is safe to power off.</p>
-                        <p className="text-slate-800 font-mono text-xs mt-2">Waiting for restart signal...</p>
-                    </>
-                )}
-                {shutdownState === 'booting' && (
-                     <>
-                        <Terminal size={64} className="text-green-500 mb-8 animate-bounce" />
-                        <h1 className="text-4xl font-bold mb-4 text-green-500 tracking-widest">INITIALIZING...</h1>
-                        <div className="text-left space-y-1 text-green-900 font-mono text-sm w-96">
-                            <p>&gt; mounting /dev/root...</p>
-                            <p>&gt; starting React_DOM...</p>
-                            <p>&gt; loading configuration...</p>
-                            <p className="text-green-500">&gt; SYSTEM READY.</p>
-                        </div>
+                        <p className="text-slate-600 font-mono text-sm">&gt; Rebooting to synchronize disk state...</p>
                     </>
                 )}
             </div>
