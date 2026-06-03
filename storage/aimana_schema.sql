@@ -1,0 +1,18 @@
+-- Architect Schema Export
+-- Project: AIMANA
+-- Generated: 12/26/2025, 9:52:19 PM
+
+CREATE TABLE NEW_ENTITY (
+  id UUID PRIMARY KEY NOT NULL
+);
+
+CREATE TABLE TEXT (
+  id UUID PRIMARY KEY NOT NULL,
+  mark_id VARCHAR,
+  text VARCHAR
+);
+
+CREATE TABLE MARK (
+  mark_id UUID PRIMARY KEY NOT NULL
+);
+

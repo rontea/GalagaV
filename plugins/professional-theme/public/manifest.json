@@ -1,0 +1,11 @@
+
+{
+  "id": "com.galagav.theme.professional",
+  "name": "Microsoft 365 System Theme",
+  "version": "1.2.0",
+  "description": "A high-productivity enterprise theme inspired by the Microsoft 365 and Fluent Design System.",
+  "main": "index.js",
+  "style": "style.css",
+  "globalVar": "GalagaPlugin_ProfessionalTheme",
+  "type": "theme"
+}

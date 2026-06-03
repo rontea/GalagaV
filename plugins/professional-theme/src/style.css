@@ -1,0 +1,134 @@
+
+/* 
+  MICROSOFT 365 SYSTEM THEME (Fluent UI Inspired)
+  This theme overrides Tailwind utility classes to provide a high-productivity experience.
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=Segoe+UI:wght@400;600;700&display=swap');
+
+/* Global Reset */
+* {
+  font-family: 'Segoe UI', 'Segoe UI Web (West European)', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif !important;
+}
+
+body, 
+.bg-slate-50, 
+.bg-neutral-950,
+.h-screen {
+  background-color: #faf9f8 !important; /* Office neutral light bg */
+  color: #323130 !important;
+}
+
+.dark body, 
+.dark .bg-neutral-950,
+.dark .h-screen {
+  background-color: #11100f !important; /* Teams/Outlook dark bg */
+  color: #ffffff !important;
+}
+
+/* Header Overrides */
+header, 
+.bg-white\/80, 
+.dark .bg-slate-950\/80 {
+  background-color: #ffffff !important;
+  border-bottom: 1px solid #edebe9 !important;
+  box-shadow: 0 1.6px 3.6px 0 rgba(0,0,0,0.132), 0 0.3px 0.9px 0 rgba(0,0,0,0.108) !important;
+  backdrop-filter: none !important;
+}
+
+.dark header, 
+.dark .bg-slate-950\/80 {
+  background-color: #201f1e !important;
+  border-bottom: 1px solid #323130 !important;
+}
+
+/* Card Overrides */
+.group.relative.rounded-xl,
+.bg-white,
+.dark .bg-slate-900\/40 {
+  background-color: #ffffff !important;
+  border-radius: 4px !important; /* M365 subtle rounding */
+  border: 1px solid #edebe9 !important;
+  box-shadow: 0 1.6px 3.6px 0 rgba(0,0,0,0.132) !important;
+}
+
+.dark .group.relative.rounded-xl,
+.dark .bg-slate-900\/40 {
+  background-color: #252423 !important;
+  border-color: #323130 !important;
+}
+
+/* Buttons (Microsoft Blue) */
+.bg-cyan-600, 
+.hover\:bg-cyan-500:hover,
+button.bg-cyan-600 {
+  background-color: #0078d4 !important;
+  border-radius: 2px !important; /* More square M365 style */
+  font-weight: 600 !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  border: none !important;
+}
+
+button:hover {
+  background-color: #106ebe !important;
+}
+
+/* Typography Specifics */
+h1, h2, h3, h4, .font-mono {
+  font-family: 'Segoe UI', sans-serif !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  font-weight: 600 !important;
+}
+
+.text-cyan-600, .dark .text-cyan-500 {
+  color: #0078d4 !important;
+}
+
+/* Forms & Inputs */
+input, textarea, select {
+  background-color: #ffffff !important;
+  border: 1px solid #8a8886 !important;
+  border-radius: 2px !important;
+  color: #323130 !important;
+}
+
+.dark input, .dark textarea, .dark select {
+  background-color: #201f1e !important;
+  border-color: #484644 !important;
+  color: #ffffff !important;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: #0078d4 !important;
+  border-width: 2px !important;
+  background-color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+/* Hide Arcade Effects */
+.scanlines {
+  display: none !important;
+}
+
+/* Tab Underlines */
+.border-cyan-500 {
+  border-color: #0078d4 !important;
+  border-bottom-width: 2px !important;
+}
+
+.text-cyan-600, .dark .text-cyan-400 {
+  color: #0078d4 !important;
+}
+
+/* Project Icons & Graphics */
+.bg-cyan-50, .dark .bg-cyan-950\/50 {
+  background-color: #eff6fc !important;
+  border-color: #deecf9 !important;
+}
+
+.dark .bg-cyan-950\/50 {
+  background-color: #002050 !important;
+  border-color: #003070 !important;
+}

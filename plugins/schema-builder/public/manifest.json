@@ -1,0 +1,11 @@
+
+{
+  "id": "com.galagav.tool.schema-builder",
+  "name": "Architect Schema Builder",
+  "version": "1.0.0",
+  "description": "Visual database designer with JSON persistence.",
+  "main": "index.js",
+  "style": "style.css",
+  "globalVar": "GalagaPlugin_SchemaBuilder",
+  "type": "tool"
+}
