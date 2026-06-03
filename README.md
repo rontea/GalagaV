@@ -1,5 +1,7 @@
 # GalagaV
 
+Current version: `0.0.0-development`
+
 **GalagaV** is a full-stack, comprehensive environment for managing projects, analyzing code snippets, and tracking architectural schemas. It combines a robust frontend project management interface with a dedicated backend API for tracking tasks, schemas, and executing local project operations.
 
 ## System Overview
