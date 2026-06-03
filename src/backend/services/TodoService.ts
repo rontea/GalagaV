@@ -26,11 +26,11 @@ function isAbsoluteSystemPath(p: string): boolean {
   );
 }
 
-function resolveProjectBasePath(localFolderPath?: string): string {
+function resolveProjectBasePath(localFolderPath?: string): string | null {
   localFolderPath = normalizeWindowsPath(localFolderPath);
 
   if (!localFolderPath || localFolderPath.trim() === '') {
-    return process.cwd();
+    return null;
   }
 
   if (isAbsoluteSystemPath(localFolderPath)) {
@@ -60,13 +60,21 @@ export class TodoService {
     return this.isSyncing;
   }
 
-  public static resolvePaths(todoFolderPath?: string, localFolderPath?: string): string {
+  public static resolvePaths(
+    todoFolderPath?: string,
+    localFolderPath?: string,
+    options: { allowAppFallback?: boolean } = {}
+  ): string {
     todoFolderPath = normalizeWindowsPath(todoFolderPath);
 
     const baseDir = resolveProjectBasePath(localFolderPath);
     const hasLinkedProjectPath = !!localFolderPath && localFolderPath.trim() !== '';
+    const hasTodoFolderPath = !!todoFolderPath && todoFolderPath.trim() !== '';
 
     if (hasLinkedProjectPath) {
+      if (!baseDir) {
+        throw new Error('Linked project folder path could not be resolved.');
+      }
       if (!fs.existsSync(baseDir)) {
         throw new Error(`Linked project folder does not exist: ${baseDir}`);
       }
@@ -75,17 +83,25 @@ export class TodoService {
       }
     }
 
-    // 2) Evaluate Todo Folder Path context
-    let dirPath = baseDir;
-    if (todoFolderPath && todoFolderPath.trim() !== '') {
+    let dirPath: string;
+    if (hasTodoFolderPath) {
       if (isAbsoluteSystemPath(todoFolderPath)) {
         dirPath = todoFolderPath;
-      } else {
+      } else if (baseDir) {
         dirPath = path.resolve(baseDir, todoFolderPath);
+      } else if (options.allowAppFallback) {
+        dirPath = path.resolve(process.cwd(), todoFolderPath);
+      } else {
+        throw new Error(
+          `Todo Folder Path "${todoFolderPath}" is relative, but no Local Folder Path is linked. Set Local Folder Path to the existing project folder or use an absolute Todo Folder Path.`
+        );
       }
-    } else {
-      // Default fallback
+    } else if (baseDir) {
       dirPath = path.resolve(baseDir, 'todo');
+    } else if (options.allowAppFallback) {
+      dirPath = path.resolve(process.cwd(), 'todo');
+    } else {
+      throw new Error('No Local Folder Path is linked. Todo files cannot be synced to the GalagaV app folder.');
     }
 
     try {
@@ -100,13 +116,18 @@ export class TodoService {
     return dirPath;
   }
 
-  static syncFromFiles(todoFolderPath?: string, localFolderPath?: string, collection?: string): Todo[] {
+  static syncFromFiles(
+    todoFolderPath?: string,
+    localFolderPath?: string,
+    collection?: string,
+    options: { allowAppFallback?: boolean } = {}
+  ): Todo[] {
     // Explicit API syncs should only be blocked by active work, not by the watcher debounce window.
     if (this.getSyncInProgress()) return TodoModel.getTodos();
     this.setSyncing(true);
     try {
       const syncCollection = collection || '';
-      let dirPath = this.resolvePaths(todoFolderPath, localFolderPath);
+      let dirPath = this.resolvePaths(todoFolderPath, localFolderPath, options);
 
     if (syncCollection) {
       dirPath = path.join(dirPath, syncCollection);

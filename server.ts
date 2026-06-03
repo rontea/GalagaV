@@ -151,7 +151,7 @@ async function startServer() {
     if (TodoService.getSyncing()) return;
     console.log(`File ${filePath} has been changed, syncing...`);
     try {
-      TodoService.syncFromFiles();
+      TodoService.syncFromFiles(undefined, undefined, undefined, { allowAppFallback: true });
     } catch (e) {
       console.error('Error syncing from file watcher:', e);
     }

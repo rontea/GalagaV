@@ -58,6 +58,7 @@ export default function TodoManagerView({ project, onGoToTimeline, onUpdateProje
   const [activeTab, setActiveTab] = useState<'list' | 'file'>('list');
   const [globalFileContent, setGlobalFileContent] = useState<string | null>(null);
   const [selectedFileModule, setSelectedFileModule] = useState<string>('');
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && targetTodoId && activeTab === 'list') {
@@ -108,12 +109,16 @@ export default function TodoManagerView({ project, onGoToTimeline, onUpdateProje
       const data = await res.json();
       if (data.success && data.content) {
         setGlobalFileContent(data.content);
+        setSyncError(null);
       } else {
-        setGlobalFileContent('File not found or not synced yet. Try syncing TODOs to file first.');
+        const message = data.error || data.message || 'File not found or not synced yet. Try syncing TODOs to file first.';
+        setGlobalFileContent(message);
+        if (data.error) setSyncError(data.error);
       }
     } catch (err) {
       console.error(err);
       setGlobalFileContent('Failed to view global TODO file');
+      setSyncError('Failed to view global TODO file');
     }
   };
 
@@ -143,6 +148,11 @@ export default function TodoManagerView({ project, onGoToTimeline, onUpdateProje
         fetch('/api/get/developers')
       ]);
       const todosDataRes = await todosRes.json();
+      if (!todosDataRes.success) {
+        setSyncError(todosDataRes.error || todosDataRes.message || 'Failed to sync TODO files.');
+      } else {
+        setSyncError(null);
+      }
       const todosData = todosDataRes.todos || [];
       setTodos(todosData);
       
@@ -161,6 +171,7 @@ export default function TodoManagerView({ project, onGoToTimeline, onUpdateProje
       setSelectedTodos([]);
     } catch (e) {
       console.error(e);
+      setSyncError('Failed to sync TODO files.');
     } finally {
       setIsLoading(false);
     }
@@ -357,6 +368,16 @@ export default function TodoManagerView({ project, onGoToTimeline, onUpdateProje
           </button>
         </div>
       </div>
+
+      {syncError && (
+        <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+          <AlertOctagon size={18} className="mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-semibold">TODO sync path needs attention</p>
+            <p className="text-xs mt-1">{syncError}</p>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'file' ? (
         <div className="flex-1 flex flex-col gap-4 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg p-6 overflow-hidden">
