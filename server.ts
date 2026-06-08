@@ -95,12 +95,17 @@ on:
     branches:
       - ${branch}
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -462,6 +467,26 @@ async function startServer() {
       res.status(500).json({
         success: false,
         error: e.stderr?.toString() || e.message || 'Failed to push branch to origin',
+      });
+    }
+  });
+
+  app.post('/api/git/pull', (req, res) => {
+    try {
+      const cwd = resolveProjectPath(req.body.cwd);
+      const branch = String(req.body.branch || '').trim() || runGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']);
+
+      if (!branch || branch === 'HEAD') {
+        res.status(400).json({ success: false, error: 'Cannot determine current branch to pull.' });
+        return;
+      }
+
+      const output = runGit(cwd, ['pull', 'origin', branch]);
+      res.json({ success: true, branch, output });
+    } catch (e: any) {
+      res.status(500).json({
+        success: false,
+        error: e.stderr?.toString() || e.message || 'Failed to pull branch from origin',
       });
     }
   });

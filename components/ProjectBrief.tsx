@@ -58,9 +58,14 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
+  const [isPullModalOpen, setIsPullModalOpen] = useState(false);
+  const [isPulling, setIsPulling] = useState(false);
+  const [pullError, setPullError] = useState<string | null>(null);
+  const [gitResult, setGitResult] = useState<{ action: 'push' | 'pull'; branch: string; output: string } | null>(null);
   const currentVersion = projectInfo?.systemVersion && projectInfo?.systemVersion !== 'Unknown'
     ? projectInfo.systemVersion
     : project.version;
+  const currentBranch = projectInfo?.currentBranch || project.defaultBranch || 'Unknown';
   const semverWorkflow = projectInfo?.semverWorkflow;
   const semverChecklist = [
     { label: 'release script', ready: Boolean(semverWorkflow?.releaseScript) },
@@ -234,7 +239,14 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
 
   const openPushConfirmation = () => {
     setPushError(null);
+    setGitResult(null);
     setIsPushModalOpen(true);
+  };
+
+  const openPullConfirmation = () => {
+    setPullError(null);
+    setGitResult(null);
+    setIsPullModalOpen(true);
   };
 
   const performPushOrigin = async () => {
@@ -253,7 +265,7 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           cwd: project.localFolderPath,
-          branch: projectInfo?.currentBranch || project.defaultBranch,
+          branch: currentBranch,
         }),
       });
       const data = await readJsonResponse(response).catch((err) => ({ success: false, error: err.message }));
@@ -262,7 +274,7 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
         alert(`Push failed: ${data?.error || 'Unknown error'}`);
         return;
       }
-      alert(`Branch ${data.branch} pushed to origin successfully.`);
+      setGitResult({ action: 'push', branch: data.branch, output: data.output || 'Push completed.' });
       fetchInfo();
     } catch (err: any) {
       setPushError(err.message || 'Failed to push branch to origin');
@@ -272,16 +284,81 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
     }
   };
 
+  const performPullOrigin = async () => {
+    if (!project.localFolderPath) {
+      setIsPullModalOpen(false);
+      return;
+    }
+
+    setIsPullModalOpen(false);
+    setIsPulling(true);
+    setPullError(null);
+
+    try {
+      const response = await fetch('/api/git/pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cwd: project.localFolderPath,
+          branch: currentBranch,
+        }),
+      });
+      const data = await readJsonResponse(response).catch((err) => ({ success: false, error: err.message }));
+      if (!response.ok || !data?.success) {
+        setPullError(data?.error || 'Failed to pull branch from origin');
+        alert(`Pull failed: ${data?.error || 'Unknown error'}`);
+        return;
+      }
+      setGitResult({ action: 'pull', branch: data.branch, output: data.output || 'Pull completed.' });
+      fetchInfo();
+    } catch (err: any) {
+      setPullError(err.message || 'Failed to pull branch from origin');
+      alert(`Pull failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsPulling(false);
+    }
+  };
+
   
   return (
     <div className="mb-16 p-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl relative group/info">
       <ConfirmModal
         isOpen={isPushModalOpen}
         title="Confirm Push to origin"
-        message={`You are about to push the following to origin:\n\nProject: ${project.name}\nRepository: ${project.repositoryUrl || 'Not configured'}\nBranch: ${projectInfo?.currentBranch || project.defaultBranch || 'Unknown'}\n\nDo you want to proceed?`}
+        message={
+          <div className="space-y-3">
+            <p>You are about to push this project to origin.</p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs dark:border-slate-700 dark:bg-slate-950/60">
+              <div>Project: {project.name}</div>
+              <div>Repository: {project.repositoryUrl || 'Not configured'}</div>
+              <div>Branch: <strong className="text-slate-900 dark:text-white">{currentBranch}</strong></div>
+              <div>Git: <span className="text-cyan-700 dark:text-cyan-300">git push origin {currentBranch}</span></div>
+            </div>
+            <p>Do you want to proceed?</p>
+          </div>
+        }
         onConfirm={performPushOrigin}
         onCancel={() => setIsPushModalOpen(false)}
         confirmLabel="Yes, push"
+      />
+      <ConfirmModal
+        isOpen={isPullModalOpen}
+        title="Confirm Pull from origin"
+        message={
+          <div className="space-y-3">
+            <p>You are about to pull the latest remote changes into this project.</p>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs dark:border-slate-700 dark:bg-slate-950/60">
+              <div>Project: {project.name}</div>
+              <div>Repository: {project.repositoryUrl || 'Not configured'}</div>
+              <div>Branch: <strong className="text-slate-900 dark:text-white">{currentBranch}</strong></div>
+              <div>Git: <span className="text-cyan-700 dark:text-cyan-300">git pull origin {currentBranch}</span></div>
+            </div>
+            <p>Do you want to proceed?</p>
+          </div>
+        }
+        onConfirm={performPullOrigin}
+        onCancel={() => setIsPullModalOpen(false)}
+        confirmLabel="Yes, pull"
       />
       <div className="flex items-center gap-4 mb-6">
         <div className="w-12 h-12 rounded-lg bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400 shadow-sm">
@@ -306,7 +383,7 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
                   className="flex items-center gap-1 text-xs font-mono text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-900/20 px-2 py-0.5 rounded hover:bg-cyan-100 dark:hover:bg-cyan-900/40 transition-colors cursor-pointer"
                   title="Designated Default Branch (Click to Switch)"
                 >
-                  <GitBranch size={12} /> {projectInfo?.currentBranch || project.defaultBranch || 'Unknown'}
+                  <GitBranch size={12} /> {currentBranch}
                   {hasUncommitted && (
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse ml-1" title="Uncommitted changes detected" />
                   )}
@@ -340,6 +417,15 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
                 </button>
                 {projectInfo?.semanticReleaseEnabled && projectInfo?.currentBranch && (
                   <>
+                    <span className="text-xs text-slate-400">&bull;</span>
+                    <button
+                      onClick={openPullConfirmation}
+                      disabled={isPulling}
+                      className="flex items-center gap-1 text-xs font-mono text-cyan-700 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-900/20 px-2 py-0.5 rounded hover:bg-cyan-100 dark:hover:bg-cyan-900/40 transition-colors cursor-pointer disabled:opacity-50"
+                      title="Pull current branch from origin"
+                    >
+                      <RefreshCw size={12} /> {isPulling ? 'Pulling...' : 'Pull'}
+                    </button>
                     <span className="text-xs text-slate-400">&bull;</span>
                     <button
                       onClick={openPushConfirmation}
@@ -388,6 +474,25 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
                     {item.ready ? 'Ready' : 'Missing'}: {item.label}
                   </span>
                 ))}
+              </div>
+            )}
+            {(gitResult || pushError || pullError) && (
+              <div className="mt-3 rounded-lg border border-slate-200 bg-white/70 p-3 text-xs dark:border-slate-700 dark:bg-slate-950/40">
+                {gitResult && (
+                  <>
+                    <div className="font-semibold text-slate-800 dark:text-slate-100">
+                      {gitResult.action === 'push' ? 'Push' : 'Pull'} completed on <strong>{gitResult.branch}</strong>
+                    </div>
+                    <pre className="mt-2 max-h-24 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] text-slate-600 dark:text-slate-300">
+                      {gitResult.output}
+                    </pre>
+                  </>
+                )}
+                {(pushError || pullError) && (
+                  <div className="break-words text-rose-600 dark:text-rose-300">
+                    {pushError || pullError}
+                  </div>
+                )}
               </div>
             )}
           </div>

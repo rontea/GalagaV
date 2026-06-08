@@ -138,12 +138,16 @@ on:
   push:
     branches:
       - main
+permissions:
+  contents: write
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:

@@ -3,7 +3,7 @@ import React, { useEffect, useRef } from 'react';
 interface ConfirmModalProps {
   isOpen: boolean;
   title: string;
-  message: string;
+  message: React.ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
   confirmLabel?: string;
@@ -60,9 +60,9 @@ const ConfirmModal: React.FC<ConfirmModalProps> = ({
             )}
             {title}
           </h3>
-          <p id="modal-desc" className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">
+          <div id="modal-desc" className="text-slate-600 dark:text-slate-300 text-sm leading-relaxed">
             {message}
-          </p>
+          </div>
         </div>
         <div className="bg-slate-50 dark:bg-slate-950/50 p-4 flex justify-end gap-3">
           <button 
