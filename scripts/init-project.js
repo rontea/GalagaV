@@ -60,7 +60,7 @@ const packageJson = {
   scripts: {
     "test": "echo \"Error: no test specified\" && exit 1",
     "commit": "git-cz",
-    "release:semver": "semantic-release --extends ./.releaserc-semver.js",
+    "release:semver": "semantic-release --extends ./.releaserc-semver.cjs",
     "release:npm": "semantic-release --extends ./.releaserc-npm.js",
     "npm-publish-if-true": 'if [ "$NPM_PUBLISH" = "true" ]; then npm publish; else echo "NPM_PUBLISH is not true, skipping publish"; fi'
   },
@@ -95,10 +95,13 @@ const releasercSemver = `module.exports = {
     '@semantic-release/release-notes-generator',
     '@semantic-release/changelog',
     ['@semantic-release/npm', { npmPublish: false }],
-    '@semantic-release/git'
+    ['@semantic-release/git', {
+      assets: ['package.json', 'package-lock.json', 'CHANGELOG.md'],
+      message: 'chore(release): \${nextRelease.version} [skip ci]\\n\\n\${nextRelease.notes}'
+    }]
   ]
 };`;
-fs.writeFileSync(path.join(targetDir, '.releaserc-semver.js'), releasercSemver);
+fs.writeFileSync(path.join(targetDir, '.releaserc-semver.cjs'), releasercSemver);
 
 const releasercNpm = `module.exports = {
   branches: ['main'],
@@ -144,9 +147,9 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '20'
       - name: Install dependencies
-        run: npm ci
+        run: npm install
       - name: Semantic Release
         run: npm run release:semver
         env:

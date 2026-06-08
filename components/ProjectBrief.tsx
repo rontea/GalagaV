@@ -3,6 +3,19 @@ import React, { useState, useEffect } from 'react';
 import { Bot, Archive, Settings, Terminal, Database, Sparkles, BookOpen, CheckSquare, Github, Folder, GitBranch, Tag, History, RefreshCw, GitMerge } from 'lucide-react';
 import { Project } from '../types';
 import { FULL_ICON_MAP } from './ProjectList';
+import ConfirmModal from './ConfirmModal';
+
+interface SemverWorkflowInfo {
+  version?: string;
+  releaseScript?: string | null;
+  configPath?: string | null;
+  workflowPath?: string | null;
+  semanticReleaseConfigured?: boolean;
+  changelogEnabled?: boolean;
+  packageVersionWritesEnabled?: boolean;
+  gitCommitEnabled?: boolean;
+  githubActionsEnabled?: boolean;
+}
 
 interface ProjectBriefProps {
   project: Project;
@@ -34,7 +47,7 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
   isArchitectHidden
 }) => {
   const ProjectIcon = FULL_ICON_MAP[project.icon || 'Terminal'] || Terminal;
-  const [projectInfo, setProjectInfo] = useState<{ currentBranch: string; systemVersion: string } | null>(null);
+  const [projectInfo, setProjectInfo] = useState<{ currentBranch: string; systemVersion: string; semanticReleaseEnabled?: boolean; semverWorkflow?: SemverWorkflowInfo } | null>(null);
   const [showBranchModal, setShowBranchModal] = useState(false);
   const [isCheckingChanges, setIsCheckingChanges] = useState(false);
   const [hasUncommitted, setHasUncommitted] = useState(false);
@@ -42,6 +55,19 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
   const [branches, setBranches] = useState<string[]>([]);
   const [isSwitching, setIsSwitching] = useState(false);
   const [branchError, setBranchError] = useState<string | null>(null);
+  const [isPushModalOpen, setIsPushModalOpen] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+  const currentVersion = projectInfo?.systemVersion && projectInfo?.systemVersion !== 'Unknown'
+    ? projectInfo.systemVersion
+    : project.version;
+  const semverWorkflow = projectInfo?.semverWorkflow;
+  const semverChecklist = [
+    { label: 'release script', ready: Boolean(semverWorkflow?.releaseScript) },
+    { label: 'release config', ready: Boolean(semverWorkflow?.configPath) },
+    { label: 'version write', ready: Boolean(semverWorkflow?.packageVersionWritesEnabled) },
+    { label: 'GitHub Action', ready: Boolean(semverWorkflow?.githubActionsEnabled) },
+  ];
 
   const readTerminalStream = async (response: Response) => {
     const reader = response.body?.getReader();
@@ -151,6 +177,8 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
           setProjectInfo(info => ({
             currentBranch: branchData.currentBranch || info?.currentBranch || 'Unknown',
             systemVersion: info?.systemVersion || projectInfo?.systemVersion || 'Unknown',
+            semanticReleaseEnabled: info?.semanticReleaseEnabled,
+            semverWorkflow: info?.semverWorkflow,
           }));
         } else {
           setBranchError(branchData.error || 'Failed to load git branches');
@@ -192,6 +220,8 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
       setProjectInfo(info => ({
         currentBranch: data.currentBranch || branchToSwitch.trim(),
         systemVersion: info?.systemVersion || projectInfo?.systemVersion || 'Unknown',
+        semanticReleaseEnabled: info?.semanticReleaseEnabled,
+        semverWorkflow: info?.semverWorkflow,
       }));
       fetchInfo();
       setShowBranchModal(false);
@@ -202,9 +232,57 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
     }
   };
 
+  const openPushConfirmation = () => {
+    setPushError(null);
+    setIsPushModalOpen(true);
+  };
+
+  const performPushOrigin = async () => {
+    if (!project.localFolderPath) {
+      setIsPushModalOpen(false);
+      return;
+    }
+
+    setIsPushModalOpen(false);
+    setIsPushing(true);
+    setPushError(null);
+
+    try {
+      const response = await fetch('/api/git/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cwd: project.localFolderPath,
+          branch: projectInfo?.currentBranch || project.defaultBranch,
+        }),
+      });
+      const data = await readJsonResponse(response).catch((err) => ({ success: false, error: err.message }));
+      if (!response.ok || !data?.success) {
+        setPushError(data?.error || 'Failed to push branch to origin');
+        alert(`Push failed: ${data?.error || 'Unknown error'}`);
+        return;
+      }
+      alert(`Branch ${data.branch} pushed to origin successfully.`);
+      fetchInfo();
+    } catch (err: any) {
+      setPushError(err.message || 'Failed to push branch to origin');
+      alert(`Push failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsPushing(false);
+    }
+  };
+
   
   return (
     <div className="mb-16 p-8 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl relative group/info">
+      <ConfirmModal
+        isOpen={isPushModalOpen}
+        title="Confirm Push to origin"
+        message={`You are about to push the following to origin:\n\nProject: ${project.name}\nRepository: ${project.repositoryUrl || 'Not configured'}\nBranch: ${projectInfo?.currentBranch || project.defaultBranch || 'Unknown'}\n\nDo you want to proceed?`}
+        onConfirm={performPushOrigin}
+        onCancel={() => setIsPushModalOpen(false)}
+        confirmLabel="Yes, push"
+      />
       <div className="flex items-center gap-4 mb-6">
         <div className="w-12 h-12 rounded-lg bg-cyan-50 dark:bg-cyan-950/50 border border-cyan-200 dark:border-cyan-500/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400 shadow-sm">
           <ProjectIcon size={24} />
@@ -235,11 +313,19 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
                 </button>
               </>
             )}
-            {(project.version || projectInfo) && (
+            {(currentVersion || projectInfo) && (
               <>
                 <span className="text-xs text-slate-400">&bull;</span>
                 <span className="flex items-center gap-1 text-xs font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded" title="Project Version">
-                  <Tag size={12} /> v{project.version || projectInfo?.systemVersion || '0.0.0'}
+                  <Tag size={12} /> v{currentVersion || '0.0.0'}
+                </span>
+              </>
+            )}
+            {projectInfo?.semanticReleaseEnabled && (
+              <>
+                <span className="text-xs text-slate-400">&bull;</span>
+                <span className="flex items-center gap-1 text-xs font-mono text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800/50 px-2 py-0.5 rounded" title="Semantic release is configured for this project">
+                  <Sparkles size={12} /> Semantic Release
                 </span>
               </>
             )}
@@ -252,6 +338,19 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
                 >
                   <History size={12} /> History
                 </button>
+                {projectInfo?.semanticReleaseEnabled && projectInfo?.currentBranch && (
+                  <>
+                    <span className="text-xs text-slate-400">&bull;</span>
+                    <button
+                      onClick={openPushConfirmation}
+                      disabled={isPushing}
+                      className="flex items-center gap-1 text-xs font-mono text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors cursor-pointer disabled:opacity-50"
+                      title="Push current branch to origin"
+                    >
+                      <GitBranch size={12} /> {isPushing ? 'Pushing...' : 'Push'}
+                    </button>
+                  </>
+                )}
                 <span className="text-xs text-slate-400">&bull;</span>
                 <button 
                   onClick={fetchInfo}
@@ -262,6 +361,34 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
                   <span className="text-[10px]">Sync</span>
                 </button>
               </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className={`mb-6 rounded-2xl border p-4 shadow-sm ${projectInfo?.semanticReleaseEnabled ? 'border-emerald-200 bg-emerald-50/60 text-slate-900 dark:border-emerald-800/70 dark:bg-emerald-900/20 dark:text-slate-100' : 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-200'}`}>
+        <div className="flex items-start gap-3">
+          <Sparkles size={20} className={`${projectInfo?.semanticReleaseEnabled ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-500 dark:text-slate-400'} mt-0.5`} />
+          <div>
+            <div className="text-sm font-semibold">
+              {projectInfo?.semanticReleaseEnabled ? 'Semantic Release enabled' : 'Semantic Release not configured'}
+            </div>
+            <p className={`mt-1 text-xs leading-5 ${projectInfo?.semanticReleaseEnabled ? 'text-slate-600 dark:text-slate-300' : 'text-slate-500 dark:text-slate-400'}`}>
+              {projectInfo?.semanticReleaseEnabled
+                ? `This project repository is configured for semantic versioning. Current package version: v${currentVersion || 'Unknown'}.`
+                : 'Semantic release is not detected in this project repository. Add a release script or semantic-release config to enable it.'}
+            </p>
+            {semverWorkflow && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {semverChecklist.map(item => (
+                  <span
+                    key={item.label}
+                    className={`rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${item.ready ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200' : 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}
+                  >
+                    {item.ready ? 'Ready' : 'Missing'}: {item.label}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -284,6 +411,16 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
           <BookOpen size={18} className="group-hover/snip-btn:scale-110 transition-transform" />
           <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Snippets</span>
         </button>
+        {onOpenCommit && (
+          <button
+            onClick={onOpenCommit}
+            className="flex items-center gap-2 px-3 py-2 text-cyan-700 dark:text-cyan-200 hover:text-cyan-600 transition-all bg-cyan-50 dark:bg-cyan-950/20 rounded-lg border border-cyan-100 dark:border-cyan-500/30 hover:border-cyan-400 shadow-sm group/commit-btn"
+            title="Open global commit"
+          >
+            <GitBranch size={18} className="group-hover/commit-btn:scale-110 transition-transform" />
+            <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Commit</span>
+          </button>
+        )}
         {onOpenMerge && (
           <button 
             onClick={() => onOpenMerge()} 

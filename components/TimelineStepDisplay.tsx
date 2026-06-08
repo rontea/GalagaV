@@ -11,13 +11,16 @@ interface TimelineStepDisplayProps {
   StatusIcon: React.ElementType;
   isCompleted: boolean;
   isFailed: boolean;
+  timelineLabel?: string;
+  timelineLinkId?: string;
+  onTimelineLabelClick?: (timelineId: string) => void;
   onEditClick: (s: Step) => void;
   onToggleShrink: (id: string) => void;
   onQuickStatusUpdate: (id: string, status: string) => void;
 }
 
 export const TimelineStepDisplay: React.FC<TimelineStepDisplayProps> = ({
-  step, style, statusConfig, StatusIcon, isCompleted, isFailed, onEditClick, onToggleShrink, onQuickStatusUpdate
+  step, style, statusConfig, StatusIcon, isCompleted, isFailed, timelineLabel, timelineLinkId, onTimelineLabelClick, onEditClick, onToggleShrink, onQuickStatusUpdate
 }) => {
   const Icon = style.icon;
 
@@ -53,6 +56,17 @@ export const TimelineStepDisplay: React.FC<TimelineStepDisplayProps> = ({
           </div>
         </div>
         <div className="flex items-start gap-2">
+          {timelineLabel && (
+            <button
+              type="button"
+              onClick={() => timelineLinkId && onTimelineLabelClick?.(timelineLinkId)}
+              className="hidden sm:inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-bold uppercase text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 hover:border-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 transition-colors"
+              title={`Open ${timelineLabel}`}
+            >
+              <span>Timeline:</span>
+              <span className="text-cyan-700 dark:text-cyan-300">{timelineLabel}</span>
+            </button>
+          )}
           {!isCompleted && !isFailed && (
             <button 
               onClick={() => onQuickStatusUpdate(step.id, 'completed')}

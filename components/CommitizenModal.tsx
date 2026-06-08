@@ -40,6 +40,8 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
   
   const [changedFiles, setChangedFiles] = useState<{file: string, status: string}[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [stagedFiles, setStagedFiles] = useState<Set<string>>(new Set());
+  const [isStaging, setIsStaging] = useState(false);
 
   const fetchChanges = async () => {
     setIsLoadingChanges(true);
@@ -115,6 +117,50 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
     }
   };
 
+  const stageSelectedFiles = async () => {
+    if (selectedFiles.size === 0) {
+      setError('Select at least one file before staging.');
+      return;
+    }
+
+    setError(null);
+    setIsStaging(true);
+
+    try {
+      const filesToAdd = Array.from(selectedFiles).map(f => `"${f.replace(/"/g, '\\"')}"`).join(' ');
+      const response = await fetch('/api/terminal/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          command: `git add ${filesToAdd}`,
+          cwd: project?.localFolderPath || undefined,
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Staging failed: ${response.statusText}`);
+      }
+
+      // Consume the stream so the request completes cleanly
+      const reader = response.body?.getReader();
+      if (reader) {
+        const decoder = new TextDecoder('utf-8');
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          decoder.decode(value, { stream: true });
+        }
+      }
+
+      setStagedFiles(new Set(selectedFiles));
+      await fetchChanges();
+    } catch (err: any) {
+      setError(err.message || 'Failed to stage selected files.');
+    } finally {
+      setIsStaging(false);
+    }
+  };
+
   const generateCommitMessage = () => {
     let msg = `${type}`;
     if (scope) msg += `(${scope})`;
@@ -127,12 +173,12 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
   };
 
   const handleCommit = async () => {
-    if (selectedFiles.size === 0 && changedFiles.length > 0) {
-      setError("Please select at least one file to commit.");
+    if (stagedFiles.size === 0) {
+      setError("Stage at least one file before entering commit details.");
       setActiveTab('changes');
       return;
     }
-    if (!subject.trim() && changedFiles.length > 0) {
+    if (!subject.trim()) {
       setError("Subject is required.");
       setActiveTab('commit');
       return;
@@ -143,16 +189,7 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
     setCommitSuccess(null);
     const message = generateCommitMessage();
     
-    // Build git add command
-    let command = '';
-    if (changedFiles.length > 0) {
-      const filesToAdd = Array.from(selectedFiles).map(f => `"${f}"`).join(' ');
-      command = `git add ${filesToAdd} && git commit -m "${message.replace(/"/g, '\\"')}"`;
-    } else {
-      setError('No changes found to commit.');
-      setIsCommitting(false);
-      return;
-    }
+    const command = `git commit -m "${message.replace(/"/g, '\\"')}"`;
     
     setIsConfirmOpen(false);
     try {
@@ -186,6 +223,9 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
       }
       
       // Successfully committed
+      setStagedFiles(new Set());
+      setSelectedFiles(new Set());
+      await fetchChanges();
       onComplete();
       setCommitSuccess(outputBuf.trim());
     } catch (err: any) {
@@ -254,22 +294,37 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
           )}
           {activeTab === 'changes' && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <button 
-                  onClick={toggleAllFiles}
-                  className="flex items-center gap-2 text-sm text-slate-300 hover:text-white transition-colors"
-                >
-                  {selectedFiles.size === changedFiles.length && changedFiles.length > 0 ? <CheckSquare size={16} className="text-indigo-400" /> : <Square size={16} />}
-                  <span>Select All</span>
-                </button>
-                <button 
-                  onClick={fetchChanges}
-                  disabled={isLoadingChanges}
-                  className="flex items-center gap-2 text-xs text-slate-400 hover:text-slate-300 transition-colors"
-                >
-                  <RefreshCw size={14} className={isLoadingChanges ? 'animate-spin' : ''} />
-                  Refresh
-                </button>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <button 
+                    onClick={toggleAllFiles}
+                    className="flex items-center gap-2 text-sm text-slate-300 hover:text-white transition-colors"
+                  >
+                    {selectedFiles.size === changedFiles.length && changedFiles.length > 0 ? <CheckSquare size={16} className="text-indigo-400" /> : <Square size={16} />}
+                    <span>Select All</span>
+                  </button>
+                  <button 
+                    onClick={fetchChanges}
+                    disabled={isLoadingChanges}
+                    className="flex items-center gap-2 text-xs text-slate-400 hover:text-slate-300 transition-colors"
+                  >
+                    <RefreshCw size={14} className={isLoadingChanges ? 'animate-spin' : ''} />
+                    Refresh
+                  </button>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-xs text-slate-400">
+                    {stagedFiles.size > 0 ? `${stagedFiles.size} staged file${stagedFiles.size === 1 ? '' : 's'} ready to commit.` : 'Select files and stage them before entering commit details.'}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={stageSelectedFiles}
+                    disabled={selectedFiles.size === 0 || isStaging}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wide text-white bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 transition-colors"
+                  >
+                    {isStaging ? 'Staging…' : 'Stage Selected'}
+                  </button>
+                </div>
               </div>
 
               {isLoadingChanges ? (
@@ -367,7 +422,7 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
               <div className="text-slate-500 mb-2 select-none">$ git commit -m \</div>
               <span className="text-cyan-400">"{generateCommitMessage()}"</span>
               <div className="mt-2 text-xs text-slate-500">
-                Files to add: {selectedFiles.size > 0 ? selectedFiles.size === changedFiles.length ? "All files" : `${selectedFiles.size} selected` : "None"}
+                {stagedFiles.size > 0 ? `Will commit ${stagedFiles.size} staged file${stagedFiles.size === 1 ? '' : 's'}.` : 'No staged files.'}
               </div>
             </div>
           )}
@@ -380,17 +435,17 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
             {activeTab === 'changes' && (
               <button 
                 onClick={() => setActiveTab('commit')}
-                disabled={changedFiles.length === 0 || (changedFiles.length > 0 && selectedFiles.size === 0)}
+                disabled={changedFiles.length === 0 || stagedFiles.size === 0}
                 className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-700 text-white font-medium rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-indigo-500/25"
               >
-                Continue <Plus size={18} />
+                Review Commit <Plus size={18} />
               </button>
             )}
             
             {activeTab === 'commit' && (
               <button 
                 onClick={() => setIsConfirmOpen(true)}
-                disabled={isCommitting || changedFiles.length === 0 || (changedFiles.length > 0 && selectedFiles.size === 0)}
+                disabled={isCommitting || stagedFiles.size === 0}
                 className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-700 text-white font-medium rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-indigo-500/25"
               >
                 {isCommitting ? (

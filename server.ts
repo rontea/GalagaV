@@ -1,3 +1,7 @@
+import dotenv from "dotenv";
+
+dotenv.config();
+
 import express from "express";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
@@ -5,6 +9,7 @@ import fs from "fs";
 import path from "path";
 import { execSync, exec, execFileSync } from "child_process";
 import JSZip from "jszip";
+import net from "net";
 import { TodoController } from "./src/backend/controllers/TodoController";
 import { TodosMiddleware } from "./src/backend/middleware/TodosMiddleware";
 import { TerminalController } from "./src/backend/controllers/TerminalController";
@@ -54,11 +59,85 @@ function runGit(cwd: string, args: string[]): string {
   }).trim();
 }
 
+function isPortAvailable(port: number): Promise<boolean> {
+  return new Promise(resolve => {
+    const tester = net.createServer()
+      .once('error', () => resolve(false))
+      .once('listening', () => {
+        tester.close(() => resolve(true));
+      })
+      .listen(port, '0.0.0.0');
+  });
+}
+
+function getSemverReleaseConfigContent(): string {
+  return `module.exports = {
+  branches: ['main'],
+  plugins: [
+    '@semantic-release/commit-analyzer',
+    '@semantic-release/release-notes-generator',
+    '@semantic-release/changelog',
+    ['@semantic-release/npm', { npmPublish: false }],
+    ['@semantic-release/git', {
+      assets: ['package.json', 'package-lock.json', 'CHANGELOG.md'],
+      message: 'chore(release): \${nextRelease.version} [skip ci]\\n\\n\${nextRelease.notes}'
+    }]
+  ]
+};
+`;
+}
+
+function getSemverWorkflowContent(branch = 'main'): string {
+  return `name: Semantic Release
+
+on:
+  push:
+    branches:
+      - ${branch}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run semantic release
+        run: npm run release:semver
+        env:
+          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+`;
+}
+
 function findNearestGitRoot(startDir: string): string | null {
   let dir = startDir;
   while (dir) {
     if (fs.existsSync(path.join(dir, '.git'))) {
       return dir;
+    }
+
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+
+  return null;
+}
+
+function findUp(startDir: string, fileName: string): string | null {
+  let dir = startDir;
+  while (dir) {
+    const candidate = path.join(dir, fileName);
+    if (fs.existsSync(candidate)) {
+      return candidate;
     }
 
     const parent = path.dirname(dir);
@@ -139,7 +218,14 @@ function getGitBranchInfo(cwd: string) {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || 3000);
+  const HMR_PORT = Number(process.env.HMR_PORT || PORT + 21678);
+
+  if (!(await isPortAvailable(PORT))) {
+    console.error(`Port ${PORT} is already in use. GalagaV may already be running at http://localhost:${PORT}.`);
+    console.error(`Stop the existing Node process or start this server with a different PORT, for example: $env:PORT=3001; npm run dev`);
+    process.exit(1);
+  }
 
   // Watch for TODO.md changes
   const watcher = chokidar.watch(path.join(process.cwd(), 'TODO.md'), {
@@ -360,6 +446,26 @@ async function startServer() {
     }
   });
 
+  app.post('/api/git/push', (req, res) => {
+    try {
+      const cwd = resolveProjectPath(req.body.cwd);
+      const branch = String(req.body.branch || '').trim() || runGit(cwd, ['rev-parse', '--abbrev-ref', 'HEAD']);
+
+      if (!branch || branch === 'HEAD') {
+        res.status(400).json({ success: false, error: 'Cannot determine current branch to push.' });
+        return;
+      }
+
+      const output = runGit(cwd, ['push', 'origin', branch]);
+      res.json({ success: true, branch, output });
+    } catch (e: any) {
+      res.status(500).json({
+        success: false,
+        error: e.stderr?.toString() || e.message || 'Failed to push branch to origin',
+      });
+    }
+  });
+
   app.post('/api/init-folders', (req, res) => {
     try {
       let { localFolderPath, initGit, todoFolderPath } = req.body;
@@ -404,6 +510,121 @@ async function startServer() {
     }
   });
 
+  app.post('/api/semantic-release/configure', (req, res) => {
+    try {
+      let { localFolderPath, defaultBranch } = req.body;
+      localFolderPath = normalizeWindowsPath(localFolderPath);
+
+      if (!localFolderPath || localFolderPath.trim() === '') {
+        res.status(400).json({ success: false, error: 'Local Folder Path is required.' });
+        return;
+      }
+
+      const requestedPath = localFolderPath.trim();
+      if (requestedPath === '.' || requestedPath === './' || requestedPath === '.\\') {
+        res.status(400).json({
+          success: false,
+          error: 'Choose a specific project folder path before configuring semantic release.',
+        });
+        return;
+      }
+
+      const resolvedLocal = resolveProjectPath(localFolderPath);
+      if (!fs.existsSync(resolvedLocal) || !fs.statSync(resolvedLocal).isDirectory()) {
+        res.status(400).json({
+          success: false,
+          error: `Local folder does not exist or is not a directory: ${resolvedLocal}`,
+        });
+        return;
+      }
+
+      let branch = String(defaultBranch || '').trim();
+      if (!branch) {
+        try {
+          branch = runGit(resolvedLocal, ['branch', '--show-current']);
+        } catch (e) {}
+      }
+      if (!branch || branch === 'Unknown') {
+        branch = 'main';
+      }
+
+      const packageJsonPath = path.join(resolvedLocal, 'package.json');
+      let pkg: any = {
+        name: path.basename(resolvedLocal).toLowerCase().replace(/[^a-z0-9._-]+/g, '-'),
+        version: '0.0.0',
+        private: true,
+      };
+
+      if (fs.existsSync(packageJsonPath)) {
+        try {
+          pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+        } catch (e: any) {
+          res.status(400).json({
+            success: false,
+            error: `Could not parse package.json: ${e.message}`,
+          });
+          return;
+        }
+      }
+
+      pkg.version = pkg.version || '0.0.0';
+      pkg.scripts = {
+        ...(pkg.scripts || {}),
+        commit: pkg.scripts?.commit || 'git-cz',
+        'release:semver': 'semantic-release --extends ./.releaserc-semver.cjs',
+      };
+      pkg.devDependencies = {
+        ...(pkg.devDependencies || {}),
+        '@semantic-release/changelog': pkg.devDependencies?.['@semantic-release/changelog'] || '^6.0.3',
+        '@semantic-release/commit-analyzer': pkg.devDependencies?.['@semantic-release/commit-analyzer'] || '^13.0.0',
+        '@semantic-release/git': pkg.devDependencies?.['@semantic-release/git'] || '^10.0.1',
+        '@semantic-release/npm': pkg.devDependencies?.['@semantic-release/npm'] || '^12.0.1',
+        '@semantic-release/release-notes-generator': pkg.devDependencies?.['@semantic-release/release-notes-generator'] || '^14.0.1',
+        commitizen: pkg.devDependencies?.commitizen || '^4.3.0',
+        'conventional-changelog-conventionalcommits': pkg.devDependencies?.['conventional-changelog-conventionalcommits'] || '^8.0.0',
+        'cz-conventional-changelog': pkg.devDependencies?.['cz-conventional-changelog'] || '^3.3.0',
+        'semantic-release': pkg.devDependencies?.['semantic-release'] || '^24.1.1',
+      };
+      pkg.config = {
+        ...(pkg.config || {}),
+        commitizen: {
+          ...(pkg.config?.commitizen || {}),
+          path: './node_modules/cz-conventional-changelog',
+        },
+      };
+
+      fs.writeFileSync(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
+
+      const releasercPath = path.join(resolvedLocal, '.releaserc-semver.cjs');
+      fs.writeFileSync(releasercPath, getSemverReleaseConfigContent());
+
+      const workflowsDir = path.join(resolvedLocal, '.github', 'workflows');
+      fs.mkdirSync(workflowsDir, { recursive: true });
+      const workflowPath = path.join(workflowsDir, 'release.yml');
+      fs.writeFileSync(workflowPath, getSemverWorkflowContent(branch));
+
+      const changelogPath = path.join(resolvedLocal, 'CHANGELOG.md');
+      if (!fs.existsSync(changelogPath)) {
+        fs.writeFileSync(changelogPath, '# Changelog\n\n');
+      }
+
+      res.json({
+        success: true,
+        localFolderPath: resolvedLocal,
+        defaultBranch: branch,
+        files: {
+          packageJsonPath,
+          releasercPath,
+          workflowPath,
+          changelogPath,
+        },
+      });
+    } catch (e: any) {
+      console.error('Semantic release configure error:', e);
+      res.status(500).json({ success: false, error: e.message || 'Failed to configure semantic release.' });
+    }
+  });
+
   app.get('/api/project-info', async (req, res) => {
     try {
       const rawCwd = (req.query.cwd as string) || process.cwd();
@@ -424,28 +645,49 @@ async function startServer() {
       } catch (e) {}
 
       let systemVersion = 'Unknown';
-      let checkDir = baseDir;
-      while (checkDir) {
-        const packageJsonPath = path.join(checkDir, 'package.json');
-        if (fs.existsSync(packageJsonPath)) {
-          try {
-            const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-            systemVersion = pkg.version || 'Unknown';
-            break;
-          } catch (e) {}
-        }
-        const parent = path.dirname(checkDir);
-        if (parent === checkDir) {
-          break;
-        }
-        checkDir = parent;
+      let semanticReleaseEnabled = false;
+      let packageJsonPath: string | null = null;
+      let releaseScript: string | null = null;
+      let commitizenConfigured = false;
+
+      packageJsonPath = findUp(baseDir, 'package.json');
+      if (packageJsonPath) {
+        try {
+          const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+          systemVersion = pkg.version || 'Unknown';
+          releaseScript = typeof pkg.scripts?.['release:semver'] === 'string' ? pkg.scripts['release:semver'] : null;
+          commitizenConfigured = Boolean(pkg.config?.commitizen);
+        } catch (e) {}
       }
+
+      const releasercPath = findUp(baseDir, '.releaserc-semver.cjs') || findUp(baseDir, '.releaserc-semver.js');
+      const workflowPath = findUp(baseDir, path.join('.github', 'workflows', 'release.yml'));
+      const releasercContent = releasercPath ? fs.readFileSync(releasercPath, 'utf8') : '';
+      const workflowContent = workflowPath ? fs.readFileSync(workflowPath, 'utf8') : '';
+
+      const semverWorkflow = {
+        version: systemVersion,
+        packageJsonPath,
+        configPath: releasercPath,
+        workflowPath,
+        releaseScript,
+        commitizenConfigured,
+        semanticReleaseConfigured: Boolean(releaseScript || releasercPath || commitizenConfigured),
+        changelogEnabled: releasercContent.includes('@semantic-release/changelog'),
+        packageVersionWritesEnabled: releasercContent.includes('@semantic-release/npm'),
+        gitCommitEnabled: releasercContent.includes('@semantic-release/git'),
+        githubActionsEnabled: workflowContent.includes('release:semver') || workflowContent.includes('semantic-release'),
+      };
+
+      semanticReleaseEnabled = semverWorkflow.semanticReleaseConfigured;
 
       const gitRoot = findNearestGitRoot(baseDir);
       if (!gitRoot) {
         res.json({
           systemVersion,
           currentBranch: 'Unknown',
+          semanticReleaseEnabled,
+          semverWorkflow,
           error: `No git repository found at or above: ${baseDir}`,
         });
         return;
@@ -483,14 +725,14 @@ async function startServer() {
           if (cliBranch === 'Unknown' || !cliBranch) {
             exec('git rev-parse --abbrev-ref HEAD', { cwd: gitRoot }, (err2: any, stdout2: string) => {
               cliBranch = err2 ? 'Unknown' : stdout2.trim();
-              res.json({ systemVersion, currentBranch: cliBranch, gitRoot });
+              res.json({ systemVersion, currentBranch: cliBranch, gitRoot, semanticReleaseEnabled, semverWorkflow });
             });
           } else {
-            res.json({ systemVersion, currentBranch: cliBranch, gitRoot });
+            res.json({ systemVersion, currentBranch: cliBranch, gitRoot, semanticReleaseEnabled, semverWorkflow });
           }
         });
       } else {
-        res.json({ systemVersion, currentBranch, gitRoot });
+        res.json({ systemVersion, currentBranch, gitRoot, semanticReleaseEnabled, semverWorkflow });
       }
     } catch (e) {
       res.json({ systemVersion: 'Unknown', currentBranch: 'Unknown' });
@@ -507,7 +749,10 @@ async function startServer() {
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { port: HMR_PORT },
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -519,8 +764,18 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+  });
+
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use. GalagaV may already be running at http://localhost:${PORT}.`);
+      console.error(`Stop the existing Node process or start this server with a different PORT, for example: $env:PORT=3001; npm run dev`);
+      process.exit(1);
+    }
+
+    throw err;
   });
 }
 

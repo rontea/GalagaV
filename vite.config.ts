@@ -5,6 +5,7 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
+  const backendPort = Number(env.PORT || process.env.PORT || 3000);
   return {
     plugins: [react(), tailwindcss()],
     define: {
@@ -17,11 +18,11 @@ export default defineConfig(({mode}) => {
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
-        '/api': 'http://localhost:3000',
-        '/__system': 'http://localhost:3000',
+        '/api': `http://localhost:${backendPort}`,
+        '/__system': `http://localhost:${backendPort}`,
       },
       watch: {
         ignored: ['**/TODO.md', '**/todo-*.md', '**/src/data/*.json'],

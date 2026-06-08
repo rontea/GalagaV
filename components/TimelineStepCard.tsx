@@ -27,6 +27,9 @@ interface TimelineStepCardProps {
   isHistoryExpanded: boolean;
   activeNoteId: string | null;
   snippets?: Snippet[];
+  timelineLabel?: string;
+  timelineLinkId?: string;
+  onTimelineLabelClick?: (timelineId: string) => void;
   handlers: {
     updateField: (field: keyof Step, val: any) => void;
     handleCancelEdit: () => void;
@@ -66,7 +69,7 @@ interface TimelineStepCardProps {
 export const TimelineStepCard: React.FC<TimelineStepCardProps> = ({
   step, index, isLast, isEditing, editFormData, allCategories, allStatuses,
   isCopied, isDragging, isDragTargetCard, dragTargetGapPosition, isShrunk, isHistoryExpanded, activeNoteId,
-  snippets, handlers
+  snippets, timelineLabel, timelineLinkId, onTimelineLabelClick, handlers
 }) => {
   const displayCategory = isEditing && editFormData.category ? editFormData.category : step.category;
   const style = allCategories[displayCategory] || allCategories.frontend || BASE_CATEGORIES.frontend;
@@ -127,6 +130,9 @@ export const TimelineStepCard: React.FC<TimelineStepCardProps> = ({
                 StatusIcon={StatusIcon} 
                 isCompleted={isCompleted} 
                 isFailed={isFailed} 
+                timelineLabel={timelineLabel}
+                timelineLinkId={timelineLinkId}
+                onTimelineLabelClick={onTimelineLabelClick}
                 onEditClick={handlers.handleEditClick}
                 onToggleShrink={handlers.toggleCompletedStep}
                 onQuickStatusUpdate={handlers.handleQuickStatusUpdate}

@@ -3,7 +3,7 @@ import { Project, CategoryConfig, StatusConfig, GlobalConfig } from '../types';
 import { 
   Settings, Plus, Trash2, Tag, Activity, Layout, X, Save, 
   CheckCircle2, AlertOctagon, Circle, Bot, Type, FileText, Lock, Clock,
-  Download, Upload, Edit2, Github, Folder, CheckSquare, GitBranch, Loader2, RefreshCw
+  Download, Upload, Edit2, Github, Folder, CheckSquare, GitBranch, Loader2, RefreshCw, Sparkles
 } from 'lucide-react';
 import { FULL_ICON_MAP } from './ProjectList';
 
@@ -40,6 +40,7 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
 
   const [isDetecting, setIsDetecting] = useState(false);
   const [isSyncingFolders, setIsSyncingFolders] = useState(false);
+  const [isConfiguringSemver, setIsConfiguringSemver] = useState(false);
 
   const syncFolders = async () => {
     if (!localFolderPath) {
@@ -101,6 +102,51 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
       console.error('Failed to detect project info:', err);
     } finally {
       setIsDetecting(false);
+    }
+  };
+
+  const configureSemanticRelease = async () => {
+    if (!localFolderPath) {
+      alert("Local Folder Path is required to configure semantic release.");
+      return;
+    }
+
+    setIsConfiguringSemver(true);
+    try {
+      const res = await fetch('/api/semantic-release/configure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          localFolderPath,
+          defaultBranch: defaultBranch || 'main',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        if (res.status === 404 && data.error?.includes('/api/semantic-release/configure')) {
+          alert("Semantic release setup is available in the UI, but the backend server has not loaded the matching API route yet.\n\nRestart the GalagaV server, then try Configure Semantic Release again.");
+          return;
+        }
+        alert("Failed to configure semantic release:\n" + (data.error || 'Unknown error'));
+        return;
+      }
+
+      if (data.defaultBranch) {
+        setDefaultBranch(prev => {
+          if (prev !== data.defaultBranch) setIsDirty(true);
+          return data.defaultBranch;
+        });
+      }
+
+      await detectProjectInfo(localFolderPath);
+      window.dispatchEvent(new Event('project-info-refresh'));
+      alert("Semantic release configuration has been applied to the linked folder.");
+    } catch (err: any) {
+      console.error(err);
+      alert("Error configuring semantic release: " + err.message);
+    } finally {
+      setIsConfiguringSemver(false);
     }
   };
 
@@ -541,8 +587,16 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
           <p className="text-[10px] text-slate-400 mt-1">Directory where TODO markdown files will be written. A relative folder name like "todo" is created inside the linked Local Folder Path.</p>
         </div>
 
-        {/* Prepare Linked Folder Action */}
-        <div className="flex justify-end mt-2">
+        {/* Prepare Linked Folder Actions */}
+        <div className="flex flex-wrap justify-end gap-2 mt-2">
+          <button
+            onClick={configureSemanticRelease}
+            disabled={isConfiguringSemver || !localFolderPath}
+            className="flex items-center gap-2 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 border border-cyan-500/20 px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all disabled:opacity-50"
+          >
+            <Sparkles size={14} className={isConfiguringSemver ? "animate-spin" : ""} />
+            {isConfiguringSemver ? 'Configuring...' : 'Configure Semantic Release'}
+          </button>
           <button
             onClick={syncFolders}
             disabled={isSyncingFolders || !localFolderPath}

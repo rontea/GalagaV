@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Project, GlobalConfig } from '../types';
+import ConfirmModal from './ConfirmModal';
 import { 
   Plus, Terminal, Trash2, ArrowRight, Calendar, Settings, X, Search,
   Gamepad2, Rocket, Code2, Cpu, Globe, Zap, Box, Ghost, Sword, Bot,
@@ -75,6 +76,7 @@ const ProjectList: React.FC<ProjectListProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [archiveConfirm, setArchiveConfirm] = useState<{ isOpen: boolean; projectId: string; projectName: string } | null>(null);
   
   // Form State
   const [newName, setNewName] = useState('');
@@ -151,6 +153,12 @@ const ProjectList: React.FC<ProjectListProps> = ({
       }
     };
     reader.readAsText(file);
+  };
+
+  const confirmArchiveProject = () => {
+    if (!archiveConfirm) return;
+    onDeleteProject(archiveConfirm.projectId);
+    setArchiveConfirm(null);
   };
 
   return (
@@ -512,7 +520,7 @@ const ProjectList: React.FC<ProjectListProps> = ({
                         onClick={(e) => { 
                           e.preventDefault();
                           e.stopPropagation(); 
-                          onDeleteProject(project.id); 
+                          setArchiveConfirm({ isOpen: true, projectId: project.id, projectName: project.name });
                         }}
                         className="p-2 bg-white/80 dark:bg-slate-950/80 text-slate-400 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-all shadow-sm hover:shadow-md border border-slate-200 dark:border-transparent hover:border-rose-200 dark:hover:border-rose-900/30 focus:opacity-100"
                         title="Archive Project"
@@ -597,6 +605,18 @@ const ProjectList: React.FC<ProjectListProps> = ({
           </div>
         )}
       </div>
+
+      {archiveConfirm && (
+        <ConfirmModal
+          isOpen={archiveConfirm.isOpen}
+          title="Archive Project?"
+          message={`Are you sure you want to archive "${archiveConfirm.projectName}"? You can restore it later from the archive.`}
+          confirmLabel="Archive"
+          isDanger={false}
+          onConfirm={confirmArchiveProject}
+          onCancel={() => setArchiveConfirm(null)}
+        />
+      )}
     </div>
   );
 };

@@ -1,14 +1,19 @@
 import { GoogleGenAI } from "@google/genai";
 
-// Always initialize the client using the environment variable as per guidelines
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+const getGeminiApiKey = (): string => {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error('Gemini API key is required. Set GEMINI_API_KEY or API_KEY.');
+  }
+  return apiKey;
+};
+
+const getGeminiClient = (): GoogleGenAI => {
+  return new GoogleGenAI({ apiKey: getGeminiApiKey() });
+};
 
 export const generatePilotCallsign = async (pilotName: string): Promise<string> => {
-  // Proactive check for the API key hard requirement
-  if (!process.env.API_KEY) {
-    console.warn("Gemini API Key missing. Returning fallback.");
-    return "MAVERICK";
-  }
+  const ai = getGeminiClient();
 
   try {
     // Select the recommended 'gemini-3-flash-preview' for basic text tasks
@@ -42,10 +47,11 @@ export const generatePilotCallsign = async (pilotName: string): Promise<string> 
 };
 
 export const generateCommitMessage = async (todo: { title: string, description: string, subtask: { text: string, completed: boolean }[], type: string }): Promise<string> => {
-  if (!process.env.API_KEY) {
+  if (!process.env.GEMINI_API_KEY && !process.env.API_KEY) {
     return `${todo.type || 'feat'}: ${todo.title}`;
   }
 
+  const ai = getGeminiClient();
   try {
     const model = 'gemini-3-flash-preview';
     const subtasksText = todo.subtask.map(st => `- ${st.text}`).join('\n');

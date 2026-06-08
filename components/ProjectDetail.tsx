@@ -9,7 +9,7 @@ import ProjectSettingsModal from './ProjectSettingsModal';
 import ArchitectView from './ArchitectView';
 import TodoManagerView from '../src/frontend/components/TodoManagerView';
 import TerminalView from '../src/frontend/components/TerminalView';
-import { Layout, Plus, AppWindow, Blocks, Database, BookOpen, X, CheckSquare, Terminal, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Layout, Plus, AppWindow, Blocks, Database, BookOpen, X, CheckSquare, Terminal, ChevronLeft, ChevronRight, Eye, Columns, Trash2 } from 'lucide-react';
 import { BASE_CATEGORIES, BASE_STATUSES, createCategoryStyle, copyToClipboard } from '../lib/ui-constants';
 import { ProjectBrief } from './ProjectBrief';
 import { TimelineStepCard } from './TimelineStepCard';
@@ -105,6 +105,16 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
   }, [project.statuses]);
 
   const activeSteps = project.steps.filter(s => !s.archivedAt && s.id !== 'architect_schema_data');
+  const timelineTitles = useMemo(() => {
+    return (project.timelines || []).reduce<Record<string, string>>((acc, t) => {
+      if (t.id) acc[t.id] = t.title;
+      return acc;
+    }, {});
+  }, [project.timelines]);
+  const visibleSteps = useMemo(() => {
+    if (activeTimelineId === 'all') return activeSteps;
+    return activeSteps.filter(step => step.timelineId === activeTimelineId);
+  }, [activeSteps, activeTimelineId]);
   const archivedSteps = project.steps.filter(s => s.archivedAt);
   const archivedTimelines = (project.timelines || []).filter(t => t.archivedAt);
   const tabSteps = activeSteps.filter(s => s.isTab);
@@ -226,7 +236,17 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
 
   const handleAddStep = () => {
     const newId = `step_${Date.now()}`;
-    const newStep: Step = { id: newId, title: '', category: 'frontend', status: 'pending', content: '', history: [], subSteps: [], createdAt: Date.now() };
+    const newStep: Step = {
+      id: newId,
+      title: '',
+      category: 'frontend',
+      status: 'pending',
+      content: '',
+      history: [],
+      subSteps: [],
+      createdAt: Date.now(),
+      timelineId: activeTimelineId !== 'all' ? activeTimelineId : undefined,
+    };
     onUpdateProject({ ...project, steps: [...project.steps, newStep] });
     setEditingStepId(newId);
     setEditFormData(newStep);
@@ -764,6 +784,10 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
             <div className="space-y-8">
                <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm mb-2 dark:border-slate-700 dark:bg-slate-900">
                  <div>
+                   <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                     <Layout size={12} />
+                     <span>{activeTimeline.title}</span>
+                   </div>
                    <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{activeTimeline.title}</p>
                    <p className="text-xs text-slate-500 dark:text-slate-400">{activeTimelineId === 'all' ? 'Showing all timelines' : `Showing timeline: ${activeTimeline.title}`}</p>
                  </div>
@@ -810,8 +834,29 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                  }}
                />
                <div className="space-y-0 pb-20">
-                  {activeSteps.map((step, index) => (
-                    <TimelineStepCard key={step.id} step={step} index={index} isLast={index === activeSteps.length - 1} isEditing={editingStepId === step.id} editFormData={editFormData} allCategories={allCategories} allStatuses={allStatuses} snippets={project.snippets} isCopied={copiedStepId === step.id} isDragging={draggedId === step.id} isDragTargetCard={dragTarget?.id === step.id && dragTarget.type === 'card'} dragTargetGapPosition={dragTarget?.id === step.id && dragTarget.type === 'gap' ? dragTarget.position : undefined} isShrunk={(step.status === 'completed' || step.status === 'failed') && !expandedCompletedSteps[step.id] && editingStepId !== step.id} isHistoryExpanded={!!expandedHistory[step.id]} activeNoteId={activeNoteId} handlers={{ updateField, handleCancelEdit, handleSaveStep, handleMainImageUpload, handleEditClick, toggleCompletedStep, toggleHistory, handleSmartCopy, handleToggleTab, handleDuplicateStep, handleAddSubStep, handleDeleteStep, handleLinkTodoToStep, handleNavigateToTodo, setActiveNoteId, handleUpdateNote, handleDragStart, handleDragEnd, handleDragOver, handleDrop, setDragTarget, ...subTaskDndHandlers, handlePromoteSubStep, handleDeleteSubStep, handleUpdateSubStep, handleQuickStatusUpdate, handleGenerateToTodo, loadingStepToTodo: loadingStepToTodo as any, handleCommitStep: (s) => setCommitStep(s) }} />
+                  {visibleSteps.map((step, index) => (
+                    <TimelineStepCard
+                    key={step.id}
+                    step={step}
+                    index={index}
+                    isLast={index === visibleSteps.length - 1}
+                    isEditing={editingStepId === step.id}
+                    editFormData={editFormData}
+                    allCategories={allCategories}
+                    allStatuses={allStatuses}
+                    snippets={project.snippets}
+                    isCopied={copiedStepId === step.id}
+                    isDragging={draggedId === step.id}
+                    isDragTargetCard={dragTarget?.id === step.id && dragTarget.type === 'card'}
+                    dragTargetGapPosition={dragTarget?.id === step.id && dragTarget.type === 'gap' ? dragTarget.position : undefined}
+                    isShrunk={(step.status === 'completed' || step.status === 'failed') && !expandedCompletedSteps[step.id] && editingStepId !== step.id}
+                    isHistoryExpanded={!!expandedHistory[step.id]}
+                    activeNoteId={activeNoteId}
+                    timelineLabel={activeTimelineId === 'all' && step.timelineId ? (timelineTitles[step.timelineId] || step.timelineId) : undefined}
+                    timelineLinkId={activeTimelineId === 'all' && step.timelineId ? step.timelineId : undefined}
+                    onTimelineLabelClick={(timelineId) => setActiveTab(`timeline-${timelineId}`)}
+                    handlers={{ updateField, handleCancelEdit, handleSaveStep, handleMainImageUpload, handleEditClick, toggleCompletedStep, toggleHistory, handleSmartCopy, handleToggleTab, handleDuplicateStep, handleAddSubStep, handleDeleteStep, handleLinkTodoToStep, handleNavigateToTodo, setActiveNoteId, handleUpdateNote, handleDragStart, handleDragEnd, handleDragOver, handleDrop, setDragTarget, ...subTaskDndHandlers, handlePromoteSubStep, handleDeleteSubStep, handleUpdateSubStep, handleQuickStatusUpdate, handleGenerateToTodo, loadingStepToTodo: loadingStepToTodo as any, handleCommitStep: (s) => setCommitStep(s) }}
+                  />
                   ))}
                </div>
                <ArchivedTasks steps={archivedSteps} timelines={archivedTimelines} onRestore={(id) => onUpdateProject({...project, steps: project.steps.map(s => s.id === id ? {...s, archivedAt: undefined} : s)})} onPermanentDelete={(id) => onUpdateProject({...project, steps: project.steps.filter(s => s.id !== id)})} onRestoreTimeline={handleRestoreTimeline} onPermanentDeleteTimeline={handlePermanentDeleteTimeline} />
@@ -909,12 +954,18 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
             <div className="space-y-2">
               {(project.timelines || []).filter((t:any) => rightPanelTimelineIds.includes(t.id) && !t.archivedAt).map((t:any) => (
                 <div key={t.id} className="flex items-center justify-between p-2 rounded hover:bg-slate-50 dark:hover:bg-slate-800">
-                  <div className="text-sm">{t.title}</div>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => { setActiveTab(`timeline-${t.id}`); }} className="text-xs rounded border px-2">Open</button>
-                    <button onClick={() => handleMoveTimelineToTabs(t.id)} className="text-xs rounded border px-2">Move to Tabs</button>
-                    <button onClick={() => handleDeleteTimeline(t.id)} className="text-xs rounded border border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 px-2" title="Archive Timeline">Remove</button>
-                  </div>
+                      <div className="text-sm">{t.title}</div>
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => { setActiveTab(`timeline-${t.id}`); }} className="p-2 rounded border text-slate-700 dark:text-slate-200" title="Open">
+                          <Eye size={14} />
+                        </button>
+                        <button onClick={() => handleMoveTimelineToTabs(t.id)} className="p-2 rounded border text-slate-700 dark:text-slate-200" title="Move to Tabs">
+                          <Columns size={14} />
+                        </button>
+                        <button onClick={() => handleDeleteTimeline(t.id)} className="p-2 rounded border border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30" title="Archive Timeline">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                 </div>
               ))}
               {rightPanelTimelineIds.length === 0 && (
