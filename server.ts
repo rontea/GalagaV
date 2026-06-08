@@ -122,6 +122,18 @@ jobs:
 `;
 }
 
+function hasReadySemverSetup(pkg: any, releasercContent: string, workflowContent: string): boolean {
+  const releaseScript = typeof pkg?.scripts?.['release:semver'] === 'string' ? pkg.scripts['release:semver'] : '';
+
+  return Boolean(
+    releaseScript.includes('semantic-release') &&
+    releasercContent.includes('@semantic-release/changelog') &&
+    releasercContent.includes('@semantic-release/npm') &&
+    releasercContent.includes('@semantic-release/git') &&
+    (workflowContent.includes('release:semver') || workflowContent.includes('semantic-release'))
+  );
+}
+
 function findNearestGitRoot(startDir: string): string | null {
   let dir = startDir;
   while (dir) {
@@ -592,6 +604,29 @@ async function startServer() {
         }
       }
 
+      const releasercPath = path.join(resolvedLocal, '.releaserc-semver.cjs');
+      const workflowPath = path.join(resolvedLocal, '.github', 'workflows', 'release.yml');
+      const changelogPath = path.join(resolvedLocal, 'CHANGELOG.md');
+      const existingReleasercContent = fs.existsSync(releasercPath) ? fs.readFileSync(releasercPath, 'utf8') : '';
+      const existingWorkflowContent = fs.existsSync(workflowPath) ? fs.readFileSync(workflowPath, 'utf8') : '';
+
+      if (hasReadySemverSetup(pkg, existingReleasercContent, existingWorkflowContent)) {
+        res.json({
+          success: true,
+          alreadyConfigured: true,
+          localFolderPath: resolvedLocal,
+          defaultBranch: branch,
+          version: pkg.version || 'Unknown',
+          files: {
+            packageJsonPath,
+            releasercPath,
+            workflowPath,
+            changelogPath,
+          },
+        });
+        return;
+      }
+
       pkg.version = pkg.version || '0.0.0';
       pkg.scripts = {
         ...(pkg.scripts || {}),
@@ -620,15 +655,12 @@ async function startServer() {
 
       fs.writeFileSync(packageJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
-      const releasercPath = path.join(resolvedLocal, '.releaserc-semver.cjs');
       fs.writeFileSync(releasercPath, getSemverReleaseConfigContent());
 
       const workflowsDir = path.join(resolvedLocal, '.github', 'workflows');
       fs.mkdirSync(workflowsDir, { recursive: true });
-      const workflowPath = path.join(workflowsDir, 'release.yml');
       fs.writeFileSync(workflowPath, getSemverWorkflowContent(branch));
 
-      const changelogPath = path.join(resolvedLocal, 'CHANGELOG.md');
       if (!fs.existsSync(changelogPath)) {
         fs.writeFileSync(changelogPath, '# Changelog\n\n');
       }

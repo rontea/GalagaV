@@ -6,24 +6,147 @@
   color-scheme: dark;
 }
 
-.rich-content h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
-.rich-content h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem; }
-.rich-content h3 { font-size: 1.125rem; font-weight: 700; margin-bottom: 0.5rem; }
-.rich-content ul { list-style-type: disc; padding-left: 1.5rem; margin-bottom: 1rem; }
-.rich-content ol { list-style-type: decimal; padding-left: 1.5rem; margin-bottom: 1rem; }
-.rich-content a { color: #0891b2; text-decoration: underline; }
-.rich-content pre { background: #f1f5f9; padding: 0.75rem; rounded: 0.375rem; font-family: monospace; overflow-x: auto; }
-.dark .rich-content pre { background: #1e293b; }
-.rich-content blockquote { border-left: 4px solid #cbd5e1; padding-left: 1rem; font-style: italic; color: #64748b; }
+.rich-content h1 { font-size: 1.875rem; font-weight: 800; margin: 1.25rem 0 0.75rem 0; color: #0f172a; }
+.dark .rich-content h1 { color: #f1f5f9; }
+.rich-content h2 { font-size: 1.5rem; font-weight: 700; margin: 1rem 0 0.625rem 0; color: #1e293b; }
+.dark .rich-content h2 { color: #e2e8f0; }
+.rich-content h3 { font-size: 1.25rem; font-weight: 700; margin: 0.875rem 0 0.5rem 0; color: #334155; }
+.dark .rich-content h3 { color: #cbd5e1; }
+.rich-content p { margin-bottom: 1rem; line-height: 1.75; }
+.rich-content ul { list-style-type: disc; padding-left: 1.75rem; margin-bottom: 1.25rem; }
+.rich-content ol { list-style-type: decimal; padding-left: 1.75rem; margin-bottom: 1.25rem; }
+.rich-content li { margin-bottom: 0.375rem; }
+.rich-content a { 
+  color: #0891b2; 
+  text-decoration: underline; 
+  font-weight: 500;
+  transition: color 0.2s;
+}
+.rich-content a:hover { color: #06b6d4; }
+.dark .rich-content a { color: #06b6d4; }
+.dark .rich-content a:hover { color: #22d3ee; }
+.rich-content pre { 
+  background: #f1f5f9; 
+  padding: 1rem; 
+  border-radius: 0.75rem; 
+  font-family: monospace; 
+  overflow-x: auto; 
+  font-size: 0.875rem;
+  border: 1px solid #cbd5e1;
+  margin: 1rem 0;
+  line-height: 1.6;
+}
+.dark .rich-content pre { 
+  background: #1e293b; 
+  border-color: #334155;
+  color: #e2e8f0;
+}
+.rich-content code {
+  background: #f1f5f9;
+  color: #0f172a;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  font-family: monospace;
+  font-size: 0.875em;
+}
+.dark .rich-content code {
+  background: #334155;
+  color: #e2e8f0;
+}
+.rich-content blockquote { 
+  border-left: 4px solid #0891b2; 
+  padding-left: 1.25rem; 
+  font-style: italic; 
+  color: #475569;
+  margin: 1rem 0;
+  font-size: 1.05em;
+}
+.dark .rich-content blockquote {
+  color: #94a3b8;
+  border-left-color: #06b6d4;
+}
 .rich-content img { 
   max-width: 100%; 
   height: auto; 
-  border-radius: 0.5rem; 
-  margin: 1rem 0; 
-  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); 
+  border-radius: 0.75rem; 
+  margin: 1.5rem 0; 
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); 
   cursor: zoom-in;
-  transition: opacity 0.2s;
+  transition: all 0.3s ease;
+  border: 1px solid #e2e8f0;
+}
+.dark .rich-content img {
+  border-color: #334155;
 }
 .rich-content img:hover {
-  opacity: 0.9;
+  opacity: 0.95;
+  box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.2);
+  transform: scale(1.02);
+}
+
+/* Smooth transitions */
+button {
+  transition: all 0.2s ease;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Animations */
+@keyframes slideInFromLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInFromTop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-in-left {
+  animation: slideInFromLeft 0.3s ease-out;
+}
+
+.animate-slide-in-top {
+  animation: slideInFromTop 0.3s ease-out;
 }

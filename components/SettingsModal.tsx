@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, X, Terminal, Trash2, Power, Upload, Package, Check, Ban, Loader2, HardDrive, RefreshCw, Eraser } from 'lucide-react';
 import { GlobalConfig, PluginConfig, PluginManifest } from '../types';
+import ConfirmModal from './ConfirmModal';
 import { FULL_ICON_MAP, DEFAULT_PROJECT_KEYS, DEFAULT_STATUS_KEYS } from './ProjectList';
 import JSZip from 'jszip';
 
@@ -18,7 +19,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
   const [processingStep, setProcessingStep] = useState<string | null>(null);
   const [installSuccess, setInstallSuccess] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-
+  const [uninstallConfirm, setUninstallConfirm] = React.useState<{ isOpen: boolean; id?: string }>({ isOpen: false });
+  
   if (!isOpen) return null;
 
   const handleTogglePlugin = (id: string) => {
@@ -108,32 +110,35 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
   };
 
   const handleUninstallPlugin = async (id: string) => {
-    if (confirm("DANGER: This will permanently delete this module's code from the physical /plugins directory and the system database. Proceed?")) {
-      setProcessingStep("Purging Module...");
-      try {
-        // 1. Attempt physical deletion from disk via system bridge
-        const response = await fetch('/__system/delete-plugin', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id })
-        });
+    // open confirm modal instead
+    setUninstallConfirm({ isOpen: true, id });
+  };
 
-        if (!response.ok) {
-            console.warn("[PLUGIN_SYSTEM] Physical deletion failed or bridge unavailable.");
-        }
+  const performUninstallPlugin = async (id?: string) => {
+    if (!id) return;
+    setUninstallConfirm({ isOpen: false });
+    setProcessingStep('Purging Module...');
+    try {
+      const response = await fetch('/__system/delete-plugin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
 
-        // 2. Remove from local configuration state
-        const updatedPlugins = (config.plugins || []).filter(p => p.id !== id);
-        onUpdateConfig({ ...config, plugins: updatedPlugins });
-        
-        setInstallSuccess("Module successfully purged.");
-        setTimeout(() => window.location.reload(), 800);
-      } catch (err) {
-        console.error("[PLUGIN_SYSTEM] Critical Uninstallation Failure:", err);
-        setUploadError("Purge failed. Manual file removal required in /plugins/.");
-      } finally {
-        setProcessingStep(null);
+      if (!response.ok) {
+        console.warn('[PLUGIN_SYSTEM] Physical deletion failed or bridge unavailable.');
       }
+
+      const updatedPlugins = (config.plugins || []).filter(p => p.id !== id);
+      onUpdateConfig({ ...config, plugins: updatedPlugins });
+
+      setInstallSuccess('Module successfully purged.');
+      setTimeout(() => window.location.reload(), 800);
+    } catch (err) {
+      console.error('[PLUGIN_SYSTEM] Critical Uninstallation Failure:', err);
+      setUploadError('Purge failed. Manual file removal required in /plugins/.');
+    } finally {
+      setProcessingStep(null);
     }
   };
 
@@ -374,6 +379,17 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
             })}
           </div>
         </div>
+        {uninstallConfirm.isOpen && (
+          <ConfirmModal
+            isOpen={uninstallConfirm.isOpen}
+            title="Purge Module?"
+            message={<span>DANGER: This will permanently delete the module's code from <strong>/plugins</strong> and the system database. Proceed?</span>}
+            confirmLabel="Purge"
+            isDanger={true}
+            onConfirm={() => performUninstallPlugin(uninstallConfirm.id)}
+            onCancel={() => setUninstallConfirm({ isOpen: false })}
+          />
+        )}
       </div>
     );
   };
@@ -442,3 +458,6 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, config, 
 };
 
 export default SettingsModal;
+
+  // Confirm modal for uninstall
+  // Rendered at component level by state in the component above via `uninstallConfirm`.

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Project, CategoryConfig, StatusConfig, GlobalConfig } from '../types';
+import ConfirmModal from './ConfirmModal';
 import { 
   Settings, Plus, Trash2, Tag, Activity, Layout, X, Save, 
   CheckCircle2, AlertOctagon, Circle, Bot, Type, FileText, Lock, Clock,
@@ -31,6 +32,10 @@ const SYSTEM_STATUSES = [
   { key: 'completed', label: 'Completed', color: 'emerald', icon: 'CheckCircle2' },
   { key: 'failed', label: 'Failed', color: 'red', icon: 'AlertOctagon' }
 ];
+
+const appendFolderName = (currentPath: string, folderName: string) => {
+  return currentPath ? `${currentPath}/${folderName}`.replace(/\/\/+/g, '/') : folderName;
+};
 
 const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({ 
   isOpen, onClose, project, onUpdateProject, globalConfig 
@@ -74,13 +79,16 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
     }
   };
 
-  const detectProjectInfo = async (path: string) => {
+  const detectProjectInfo = async (path: string, showModal = false) => {
     if (!path || isDetecting) return;
     setIsDetecting(true);
     try {
       const res = await fetch(`/api/project-info?cwd=${encodeURIComponent(path)}`);
       if (res.ok) {
         const data = await res.json();
+        const detectedBranch = data.currentBranch && data.currentBranch !== 'Unknown' ? data.currentBranch : '';
+        const detectedVersion = data.systemVersion && data.systemVersion !== 'Unknown' ? data.systemVersion : '';
+
         if (data.currentBranch && data.currentBranch !== 'Unknown') {
           setDefaultBranch(prev => {
             if (prev !== data.currentBranch) {
@@ -97,9 +105,27 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
             return data.systemVersion;
           });
         }
+
+        if (showModal) {
+          const detectedItems = [
+            detectedBranch ? `Branch: ${detectedBranch}` : '',
+            detectedVersion ? `Version: ${detectedVersion}` : '',
+          ].filter(Boolean);
+
+          alert(
+            detectedItems.length > 0
+              ? `Project info detected.\n${detectedItems.join('\n')}`
+              : 'Project info detected, but no branch or version details were found.'
+          );
+        }
+      } else if (showModal) {
+        alert('Failed to detect project info.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to detect project info:', err);
+      if (showModal) {
+        alert(`Failed to detect project info: ${err.message || 'Unknown error'}`);
+      }
     } finally {
       setIsDetecting(false);
     }
@@ -113,6 +139,35 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
 
     setIsConfiguringSemver(true);
     try {
+      try {
+        const infoRes = await fetch(`/api/project-info?cwd=${encodeURIComponent(localFolderPath)}`);
+        if (infoRes.ok) {
+          const info = await infoRes.json();
+          const workflow = info?.semverWorkflow;
+          const isSemverReady = Boolean(
+            workflow?.releaseScript &&
+            workflow?.configPath &&
+            workflow?.packageVersionWritesEnabled &&
+            workflow?.gitCommitEnabled &&
+            workflow?.githubActionsEnabled
+          );
+
+          if (isSemverReady) {
+            if (info.currentBranch && info.currentBranch !== 'Unknown') {
+              setDefaultBranch(info.currentBranch);
+            }
+            if (info.systemVersion && info.systemVersion !== 'Unknown') {
+              setVersion(info.systemVersion);
+            }
+            window.dispatchEvent(new Event('project-info-refresh'));
+            alert("Semantic release is already ready for this linked folder. No reset was needed.");
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn('Could not pre-check semantic release setup:', err);
+      }
+
       const res = await fetch('/api/semantic-release/configure', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -141,7 +196,9 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
 
       await detectProjectInfo(localFolderPath);
       window.dispatchEvent(new Event('project-info-refresh'));
-      alert("Semantic release configuration has been applied to the linked folder.");
+      alert(data.alreadyConfigured
+        ? "Semantic release is already ready for this linked folder. No reset was needed."
+        : "Semantic release configuration has been applied to the linked folder.");
     } catch (err: any) {
       console.error(err);
       alert("Error configuring semantic release: " + err.message);
@@ -177,6 +234,8 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
   const [editStatLabel, setEditStatLabel] = useState('');
   const [editStatColor, setEditStatColor] = useState('slate');
   const [editStatIcon, setEditStatIcon] = useState('Circle');
+  const [removeCategoryConfirm, setRemoveCategoryConfirm] = useState<{ isOpen: boolean; key?: string }>({ isOpen: false });
+  const [removeStatusConfirm, setRemoveStatusConfirm] = useState<{ isOpen: boolean; key?: string }>({ isOpen: false });
 
   // Sync state when project changes or modal opens
   useEffect(() => {
@@ -195,7 +254,7 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
         detectProjectInfo(project.localFolderPath);
       }
     }
-  }, [isOpen]);
+  }, [isOpen, project]);
 
   if (!isOpen) return null;
 
@@ -327,12 +386,7 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
   };
 
   const handleRemoveCategory = (key: string) => {
-      if (confirm(`Remove category "${key}"? Existing tasks will revert to default styling.`)) {
-        onUpdateProject({
-            ...project,
-            categories: (project.categories || []).filter(c => c.key !== key)
-        });
-      }
+      setRemoveCategoryConfirm({ isOpen: true, key });
   };
 
   const handleStartEditCategory = (cat: CategoryConfig) => {
@@ -380,12 +434,25 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
   };
 
   const handleRemoveStatus = (key: string) => {
-    if (confirm(`Remove status "${key}"? Existing tasks will need to be updated.`)) {
-        onUpdateProject({
-            ...project,
-            statuses: (project.statuses || []).filter(s => s.key !== key)
-        });
-    }
+    setRemoveStatusConfirm({ isOpen: true, key });
+  };
+
+  const performRemoveCategory = (key?: string) => {
+    if (!key) return;
+    setRemoveCategoryConfirm({ isOpen: false });
+    onUpdateProject({
+      ...project,
+      categories: (project.categories || []).filter(c => c.key !== key)
+    });
+  };
+
+  const performRemoveStatus = (key?: string) => {
+    if (!key) return;
+    setRemoveStatusConfirm({ isOpen: false });
+    onUpdateProject({
+      ...project,
+      statuses: (project.statuses || []).filter(s => s.key !== key)
+    });
   };
 
   const handleStartEditStatus = (stat: StatusConfig) => {
@@ -472,7 +539,7 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
               )}
             </div>
             <button
-              onClick={() => detectProjectInfo(localFolderPath)}
+              onClick={() => detectProjectInfo(localFolderPath, true)}
               disabled={!localFolderPath || isDetecting}
               className="bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all border border-slate-300 dark:border-slate-600 disabled:opacity-50"
             >
@@ -484,8 +551,10 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
                 if (!isIframe && 'showDirectoryPicker' in window) {
                   try {
                     const dirHandle = await (window as any).showDirectoryPicker();
-                    setLocalFolderPath((prev) => prev ? `${prev}/${dirHandle.name}`.replace(/\/\/+/g, '/') : dirHandle.name);
+                    const nextPath = appendFolderName(localFolderPath, dirHandle.name);
+                    setLocalFolderPath(nextPath);
                     setIsDirty(true);
+                    alert(`Local folder path added.\n${nextPath}`);
                   } catch (err: any) {
                     if (err.name !== 'AbortError') {
                       console.error('Failed to select directory:', err);
@@ -508,8 +577,10 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
                         const pathParts = firstFile.webkitRelativePath.split('/');
                         if (pathParts.length > 0) {
                           const dirName = pathParts[0];
-                          setLocalFolderPath((prev) => prev ? `${prev}/${dirName}`.replace(/\/\/+/g, '/') : dirName);
+                          const nextPath = appendFolderName(localFolderPath, dirName);
+                          setLocalFolderPath(nextPath);
                           setIsDirty(true);
+                          alert(`Local folder path added.\n${nextPath}`);
                         }
                       } else {
                         alert("An empty folder was selected, or the browser didn't return any files. Please type the folder name manually.");
@@ -544,8 +615,10 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
                 if (!isIframe && 'showDirectoryPicker' in window) {
                   try {
                     const dirHandle = await (window as any).showDirectoryPicker();
-                    setTodoFolderPath((prev) => prev ? `${prev}/${dirHandle.name}`.replace(/\/\/+/g, '/') : dirHandle.name);
+                    const nextPath = appendFolderName(todoFolderPath, dirHandle.name);
+                    setTodoFolderPath(nextPath);
                     setIsDirty(true);
+                    alert(`Todo folder path added.\n${nextPath}`);
                   } catch (err: any) {
                     if (err.name !== 'AbortError') {
                       console.error('Failed to select directory:', err);
@@ -568,8 +641,10 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
                         const pathParts = firstFile.webkitRelativePath.split('/');
                         if (pathParts.length > 0) {
                           const dirName = pathParts[0];
-                          setTodoFolderPath((prev) => prev ? `${prev}/${dirName}`.replace(/\/\/+/g, '/') : dirName);
+                          const nextPath = appendFolderName(todoFolderPath, dirName);
+                          setTodoFolderPath(nextPath);
                           setIsDirty(true);
+                          alert(`Todo folder path added.\n${nextPath}`);
                         }
                       } else {
                         alert("An empty folder was selected, or the browser didn't return any files. Please type the folder name manually.");
@@ -1034,8 +1109,30 @@ const ProjectSettingsModal: React.FC<ProjectSettingsModalProps> = ({
         </div>
 
       </div>
+      {removeCategoryConfirm.isOpen && (
+        <ConfirmModal
+          isOpen={removeCategoryConfirm.isOpen}
+          title="Remove Category?"
+          message={<span>Remove category "<strong>{removeCategoryConfirm.key}</strong>"? Existing tasks will revert to default styling.</span>}
+          confirmLabel="Remove"
+          isDanger={true}
+          onConfirm={() => performRemoveCategory(removeCategoryConfirm.key)}
+          onCancel={() => setRemoveCategoryConfirm({ isOpen: false })}
+        />
+      )}
+      {removeStatusConfirm.isOpen && (
+        <ConfirmModal
+          isOpen={removeStatusConfirm.isOpen}
+          title="Remove Status?"
+          message={<span>Remove status "<strong>{removeStatusConfirm.key}</strong>"? Existing tasks may need to be updated.</span>}
+          confirmLabel="Remove"
+          isDanger={true}
+          onConfirm={() => performRemoveStatus(removeStatusConfirm.key)}
+          onCancel={() => setRemoveStatusConfirm({ isOpen: false })}
+        />
+      )}
     </div>
   );
-};
+}
 
 export default ProjectSettingsModal;

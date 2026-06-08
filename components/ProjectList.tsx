@@ -77,6 +77,7 @@ const ProjectList: React.FC<ProjectListProps> = ({
   const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [archiveConfirm, setArchiveConfirm] = useState<{ isOpen: boolean; projectId: string; projectName: string } | null>(null);
+  const [clearConfirm, setClearConfirm] = useState<boolean>(false);
   
   // Form State
   const [newName, setNewName] = useState('');
@@ -232,7 +233,7 @@ const ProjectList: React.FC<ProjectListProps> = ({
           {viewMode === 'archived' && archivedCount > 0 && (
             <button
               type="button"
-              onClick={onClearArchive}
+              onClick={() => setClearConfirm(true)}
               className="flex items-center gap-2 px-3 py-1.5 bg-rose-100 dark:bg-rose-950/30 hover:bg-rose-200 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 border border-rose-200 dark:border-rose-900/50 hover:border-rose-300 dark:hover:border-rose-700 rounded transition-all text-xs font-bold uppercase"
               aria-label="Clear all archived projects"
             >
@@ -615,6 +616,17 @@ const ProjectList: React.FC<ProjectListProps> = ({
           isDanger={false}
           onConfirm={confirmArchiveProject}
           onCancel={() => setArchiveConfirm(null)}
+        />
+      )}
+      {clearConfirm && (
+        <ConfirmModal
+          isOpen={clearConfirm}
+          title="Clear Archive?"
+          message={<span>Permanently delete <strong>ALL</strong> archived projects? This action cannot be undone.</span>}
+          confirmLabel="Clear All"
+          isDanger={true}
+          onConfirm={() => { onClearArchive(); setClearConfirm(false); }}
+          onCancel={() => setClearConfirm(false)}
         />
       )}
     </div>

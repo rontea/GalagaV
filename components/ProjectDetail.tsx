@@ -66,6 +66,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
   const [dragOverTabId, setDragOverTabId] = useState<string | null>(null);
 
   const [toastMessage, setToastMessage] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [loadingStepToTodo, setLoadingStepToTodo] = useState<string | null>(null);
 
   // Timeline/modal/right-panel state
   const [showNewTimelineModal, setShowNewTimelineModal] = useState(false);
@@ -106,7 +107,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
 
   const activeSteps = project.steps.filter(s => !s.archivedAt && s.id !== 'architect_schema_data');
   const timelineTitles = useMemo(() => {
-    return (project.timelines || []).reduce<Record<string, string>>((acc, t) => {
+    return (project.timelines || []).reduce((acc: Record<string, string>, t) => {
       if (t.id) acc[t.id] = t.title;
       return acc;
     }, {});
@@ -482,8 +483,6 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
       handleGenerateToTodo(affectedStep);
     }
   };
-
-  const [loadingStepToTodo, setLoadingStepToTodo] = useState<string | null>(null);
 
   const handleSmartCopy = async (s: Step) => { if (await copyToClipboard(s.content)) { setCopiedStepId(s.id); setTimeout(() => setCopiedStepId(null), 2000); } };
   const updateField = (field: keyof Step, val: any) => setEditFormData(p => ({ ...p, [field]: val }));

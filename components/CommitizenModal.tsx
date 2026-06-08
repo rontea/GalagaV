@@ -127,7 +127,7 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
     setIsStaging(true);
 
     try {
-      const filesToAdd = Array.from(selectedFiles).map(f => `"${f.replace(/"/g, '\\"')}"`).join(' ');
+      const filesToAdd = Array.from(selectedFiles as Set<string>).map(f => `"${f.replace(/"/g, '\\"')}"`).join(' ');
       const response = await fetch('/api/terminal/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -470,5 +470,4 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
     </div>
   );
 };
-
 

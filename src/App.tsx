@@ -137,10 +137,8 @@ export default function App() {
   };
 
   const handleDeleteProject = (id: string) => {
-    if (confirm("Are you sure you want to delete this project?")) {
-      // Soft delete
-      handleUpdateProjects(projects.map(p => p.id === id ? { ...p, deletedAt: Date.now() } : p));
-    }
+    // Soft delete (confirmation should be handled by the caller/modal)
+    handleUpdateProjects(projects.map(p => p.id === id ? { ...p, deletedAt: Date.now() } : p));
   };
 
   const handleRestoreProject = (id: string) => {
@@ -148,16 +146,13 @@ export default function App() {
   };
 
   const handlePermanentDeleteProject = (id: string) => {
-    if (confirm("Permanently delete this project and all its data?")) {
-      handleUpdateProjects(projects.filter(p => p.id !== id));
-      if (selectedProjectId === id) setSelectedProjectId(null);
-    }
+    // Permanent delete (confirmation should be handled by the caller/modal)
+    handleUpdateProjects(projects.filter(p => p.id !== id));
+    if (selectedProjectId === id) setSelectedProjectId(null);
   };
 
   const handleClearArchive = () => {
-    if (confirm("Permanently delete ALL archived projects?")) {
-      handleUpdateProjects(projects.filter(p => !p.deletedAt));
-    }
+    handleUpdateProjects(projects.filter(p => !p.deletedAt));
   };
 
   const handleUpdateProject = async (updatedProject: Project) => {

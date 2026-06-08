@@ -33,6 +33,8 @@ export interface Project {
   todoFolderPath?: string;
   defaultBranch?: string;
   version?: string;
+  categories?: CategoryConfig[];
+  statuses?: StatusConfig[];
   steps: Step[];
   snippets?: Snippet[];
   tabOrder?: string[];

@@ -7,6 +7,7 @@ import {
   MousePointer2, Move, Info
 } from 'lucide-react';
 import { Project, SchemaData, Table, Column, Step, Relationship } from '../types';
+import ConfirmModal from './ConfirmModal';
 import { GoogleGenAI, Type as SchemaType } from "@google/genai";
 
 interface ArchitectViewProps {
@@ -30,6 +31,7 @@ const ArchitectView: React.FC<ArchitectViewProps> = ({ project, onSave, theme })
   const [aiPrompt, setAiPrompt] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [notification, setNotification] = useState<string | null>(null);
+  const [wipeConfirm, setWipeConfirm] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -735,7 +737,18 @@ const ArchitectView: React.FC<ArchitectViewProps> = ({ project, onSave, theme })
         <div className="absolute bottom-8 left-1/2 -translate-x-1/2 bg-white/90 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 px-8 py-4 rounded-full shadow-2xl flex items-center gap-8 z-50 backdrop-blur-md animate-in slide-in-from-bottom-4">
             <button onClick={() => setIsSnapping(!isSnapping)} className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-colors ${isSnapping ? 'text-cyan-500' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}><Grid3X3 size={16} /> Grid: {isSnapping ? 'SNAP' : 'FREE'}</button>
             <div className="w-px h-6 bg-slate-200 dark:bg-slate-800" />
-            <button onClick={() => { if(confirm("Wipe entire blueprint state?")) setData({ tables: [], relationships: [] }); }} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-rose-500 transition-colors"><Trash size={16} /> Wipe Blueprint</button>
+            <button onClick={() => setWipeConfirm(true)} className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 hover:text-rose-500 transition-colors"><Trash size={16} /> Wipe Blueprint</button>
+            {wipeConfirm && (
+              <ConfirmModal
+                isOpen={wipeConfirm}
+                title="Wipe Blueprint?"
+                message={<span>Wipe entire blueprint state? This will remove all tables and relationships.</span>}
+                confirmLabel="Wipe"
+                isDanger={true}
+                onConfirm={() => { setWipeConfirm(false); setData({ tables: [], relationships: [] }); }}
+                onCancel={() => setWipeConfirm(false)}
+              />
+            )}
         </div>
 
         {notification && (

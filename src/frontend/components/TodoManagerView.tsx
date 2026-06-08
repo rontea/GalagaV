@@ -222,7 +222,20 @@ export default function TodoManagerView({ project, onGoToTimeline, onUpdateProje
   };
 
   const archiveSelected = async () => {
-    if (!confirm('Are you sure you want to archive the selected TODOs? They will be removed from the files but kept in the archive.')) return;
+    // open confirm modal
+    setArchiveConfirm(true);
+  };
+
+  const deleteSelectedPermanently = async () => {
+    // open confirm modal
+    setDeleteConfirm(true);
+  };
+
+  const [archiveConfirm, setArchiveConfirm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+
+  const performArchiveSelected = async () => {
+    setArchiveConfirm(false);
     for (const id of selectedTodos) {
       await fetch('/api/archivetodo', {
         method: 'POST',
@@ -238,8 +251,8 @@ export default function TodoManagerView({ project, onGoToTimeline, onUpdateProje
     alert('Selected TODOs archived!');
   };
 
-  const deleteSelectedPermanently = async () => {
-    if (!confirm('PERMANENT DELETE: Are you sure? This cannot be undone.')) return;
+  const performDeleteSelected = async () => {
+    setDeleteConfirm(false);
     for (const id of selectedTodos) {
       await fetch('/api/deletetodo', {
         method: 'POST',
@@ -535,6 +548,28 @@ export default function TodoManagerView({ project, onGoToTimeline, onUpdateProje
           title={viewFileTitle}
           content={viewFileContent}
           onClose={() => setFileViewContent(null)}
+        />
+      )}
+      {archiveConfirm && (
+        <ConfirmModal
+          isOpen={archiveConfirm}
+          title="Archive Selected TODOs?"
+          message={<span>Are you sure you want to archive the selected TODOs? They will be removed from the files but kept in the archive.</span>}
+          confirmLabel="Archive"
+          isDanger={false}
+          onConfirm={performArchiveSelected}
+          onCancel={() => setArchiveConfirm(false)}
+        />
+      )}
+      {deleteConfirm && (
+        <ConfirmModal
+          isOpen={deleteConfirm}
+          title="Permanent Delete?"
+          message={<span>PERMANENT DELETE: Are you sure? This cannot be undone.</span>}
+          confirmLabel="Delete"
+          isDanger={true}
+          onConfirm={performDeleteSelected}
+          onCancel={() => setDeleteConfirm(false)}
         />
       )}
     </div>

@@ -61,6 +61,7 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
   const [isPullModalOpen, setIsPullModalOpen] = useState(false);
   const [isPulling, setIsPulling] = useState(false);
   const [pullError, setPullError] = useState<string | null>(null);
+  const [archiveConfirm, setArchiveConfirm] = useState(false);
   const [gitResult, setGitResult] = useState<{ action: 'push' | 'pull'; branch: string; output: string } | null>(null);
   const currentVersion = projectInfo?.systemVersion && projectInfo?.systemVersion !== 'Unknown'
     ? projectInfo.systemVersion
@@ -546,7 +547,7 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
             <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">{hasArchitect ? "Architect" : "Engage Architect"}</span>
           </button>
         )}
-        <button onClick={() => onDeleteProject(project.id)} className="p-2 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors bg-white/50 dark:bg-black/20 rounded-lg border border-transparent hover:border-rose-200 dark:hover:border-rose-900/50" title="Archive Project"><Archive size={18} /></button>
+        <button onClick={() => setArchiveConfirm(true)} className="p-2 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors bg-white/50 dark:bg-black/20 rounded-lg border border-transparent hover:border-rose-200 dark:hover:border-rose-900/50" title="Archive Project"><Archive size={18} /></button>
         <button onClick={onOpenSettings} className="p-2 text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors bg-white/50 dark:bg-black/20 rounded-lg border border-transparent hover:border-cyan-200 dark:hover:border-cyan-900/50" title="Settings"><Settings size={18} /></button>
       </div>
 
@@ -662,6 +663,17 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
             </div>
           )}
         </div>
+      )}
+      {archiveConfirm && (
+        <ConfirmModal
+          isOpen={archiveConfirm}
+          title="Archive Project?"
+          message={<span>Are you sure you want to archive "<strong>{project.name}</strong>"? You can restore it later from the archive.</span>}
+          confirmLabel="Archive"
+          isDanger={false}
+          onConfirm={() => { setArchiveConfirm(false); onDeleteProject(project.id); }}
+          onCancel={() => setArchiveConfirm(false)}
+        />
       )}
     </div>
   );
