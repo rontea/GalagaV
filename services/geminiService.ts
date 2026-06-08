@@ -1,5 +1,20 @@
 import { GoogleGenAI } from "@google/genai";
 
+const CONVENTIONAL_TYPES = new Set(['feat', 'fix', 'docs', 'style', 'refactor', 'perf', 'test', 'build', 'ci', 'chore', 'revert']);
+
+const normalizeCommitMessage = (message: string, fallbackType: string, fallbackTitle: string): string => {
+  const trimmed = message.trim().replace(/^["']|["']$/g, '');
+  const fixedMissingColon = trimmed.replace(/^([a-z]+)(\([^)\r\n]+\))(!?)\s+(.+)$/i, '$1$2$3: $4');
+  const match = fixedMissingColon.match(/^([a-z]+)(?:\([^)\r\n]+\))?!?:\s+\S.+$/i);
+
+  if (match && CONVENTIONAL_TYPES.has(match[1].toLowerCase())) {
+    return fixedMissingColon;
+  }
+
+  const type = CONVENTIONAL_TYPES.has(fallbackType) ? fallbackType : 'feat';
+  return `${type}: ${fallbackTitle.trim() || 'update project'}`;
+};
+
 const getGeminiApiKey = (): string => {
   const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
   if (!apiKey) {
@@ -47,8 +62,9 @@ export const generatePilotCallsign = async (pilotName: string): Promise<string> 
 };
 
 export const generateCommitMessage = async (todo: { title: string, description: string, subtask: { text: string, completed: boolean }[], type: string }): Promise<string> => {
+  const type = (todo.type || 'feat').toLowerCase();
   if (!process.env.GEMINI_API_KEY && !process.env.API_KEY) {
-    return `${todo.type || 'feat'}: ${todo.title}`;
+    return normalizeCommitMessage('', type, todo.title);
   }
 
   const ai = getGeminiClient();
@@ -80,9 +96,9 @@ export const generateCommitMessage = async (todo: { title: string, description: 
       }
     });
 
-    return response.text?.trim() || `${todo.type || 'feat'}: ${todo.title}`;
+    return normalizeCommitMessage(response.text || '', type, todo.title);
   } catch (error) {
     console.error("Gemini Commit Generation Error:", error);
-    return `${todo.type || 'feat'}: ${todo.title}`;
+    return normalizeCommitMessage('', type, todo.title);
   }
 };

@@ -1,6 +1,7 @@
 name: Semantic Release
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -10,6 +11,7 @@ permissions:
 
 jobs:
   release:
+    name: Semver package release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -23,9 +25,9 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Run semantic release
+      - name: Analyze commits and publish semver release
         run: npm run release:semver
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

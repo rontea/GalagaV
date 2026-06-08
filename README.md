@@ -107,18 +107,19 @@ GalagaV is wired for semantic-release using conventional commits.
 
 1. Use the UI commit workflow to create commits in conventional commit format.
 2. Conventional commit messages should use `type(scope): subject` semantics.
-3. When semantic-release runs, it analyzes commit history and calculates the next semantic version.
-4. `@semantic-release/npm` writes that version into `package.json` and `package-lock.json` without publishing to npm.
-5. `@semantic-release/changelog` updates `CHANGELOG.md`.
-6. `@semantic-release/git` commits the updated release assets back to the repository.
-7. The app reads the latest version from the closest linked `package.json` and updates the version badge.
+3. `feat` commits produce minor releases, `fix`, `perf`, and `update` commits produce patch releases, and breaking changes produce major releases.
+4. When semantic-release runs, it analyzes commit history and calculates the next semantic version.
+5. `@semantic-release/npm` writes that version into `package.json` and `package-lock.json` without publishing to npm.
+6. `@semantic-release/changelog` updates `CHANGELOG.md`.
+7. `@semantic-release/git` commits the updated release assets back to the repository.
+8. The app reads the latest version from the closest linked `package.json` and updates the version badge.
 
 ### CI Release Pipeline
 
 A GitHub Actions workflow has been added at `.github/workflows/release.yml`.
 - It triggers on `push` to `main`
 - It runs on Node.js 20 for semantic-release 24 compatibility
-- It installs dependencies with `npm install` and runs `npm run release:semver`
+- It installs dependencies with `npm ci` and runs `npm run release:semver`
 - It uses `GITHUB_TOKEN` to commit updated assets such as `package.json`, `package-lock.json`, and `CHANGELOG.md`
 
 ## Local Folder Integration

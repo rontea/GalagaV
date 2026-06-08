@@ -73,9 +73,27 @@ function isPortAvailable(port: number): Promise<boolean> {
 function getSemverReleaseConfigContent(): string {
   return `module.exports = {
   branches: ['main'],
+  tagFormat: 'v\${version}',
   plugins: [
-    '@semantic-release/commit-analyzer',
-    '@semantic-release/release-notes-generator',
+    ['@semantic-release/commit-analyzer', {
+      parserOpts: {
+        headerPattern: /^(\\w+)(?:\\(([^)\\r\\n]+)\\))?(!)?:?\\s+(.+)$/,
+        headerCorrespondence: ['type', 'scope', 'breaking', 'subject']
+      },
+      releaseRules: [
+        { type: 'feat', release: 'minor' },
+        { type: 'fix', release: 'patch' },
+        { type: 'perf', release: 'patch' },
+        { type: 'update', release: 'patch' },
+        { breaking: '!', release: 'major' }
+      ]
+    }],
+    ['@semantic-release/release-notes-generator', {
+      parserOpts: {
+        headerPattern: /^(\\w+)(?:\\(([^)\\r\\n]+)\\))?(!)?:?\\s+(.+)$/,
+        headerCorrespondence: ['type', 'scope', 'breaking', 'subject']
+      }
+    }],
     '@semantic-release/changelog',
     ['@semantic-release/npm', { npmPublish: false }],
     ['@semantic-release/git', {
@@ -91,6 +109,7 @@ function getSemverWorkflowContent(branch = 'main'): string {
   return `name: Semantic Release
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - ${branch}
@@ -100,6 +119,7 @@ permissions:
 
 jobs:
   release:
+    name: Semver package release
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -113,9 +133,9 @@ jobs:
           node-version: '20'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Run semantic release
+      - name: Analyze commits and publish semver release
         run: npm run release:semver
         env:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
