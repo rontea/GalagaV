@@ -33,6 +33,15 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
+function parseJSON<T>(value: unknown, fallback: T): T {
+  if (typeof value !== 'string' || !value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * Initializes the SQLite database. 
  * Checks Server Disk first, then LocalStorage, or starts fresh.
@@ -111,12 +120,22 @@ export const initDB = async (): Promise<Database> => {
 
 const createSchema = (database: Database) => {
   database.run(`
-    CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT, description TEXT, systemPrompt TEXT, icon TEXT, deletedAt INTEGER, repositoryUrl TEXT, localFolderPath TEXT, todoFolderPath TEXT, defaultBranch TEXT, version TEXT);
-    CREATE TABLE IF NOT EXISTS steps (id TEXT PRIMARY KEY, projectId TEXT, parentId TEXT, title TEXT, category TEXT, status TEXT, content TEXT, notes TEXT, isTab INTEGER, createdAt INTEGER, archivedAt INTEGER, sortOrder INTEGER, imageUrl TEXT);
+    CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT, description TEXT, systemPrompt TEXT, icon TEXT, deletedAt INTEGER, repositoryUrl TEXT, localFolderPath TEXT, todoFolderPath TEXT, defaultBranch TEXT, version TEXT, tabOrder TEXT, timelines TEXT, snippets TEXT, rightPanelTimelineIds TEXT);
+    CREATE TABLE IF NOT EXISTS steps (id TEXT PRIMARY KEY, projectId TEXT, parentId TEXT, title TEXT, category TEXT, status TEXT, content TEXT, notes TEXT, isTab INTEGER, createdAt INTEGER, archivedAt INTEGER, sortOrder INTEGER, imageUrl TEXT, todoId TEXT, timelineId TEXT, history TEXT);
     CREATE TABLE IF NOT EXISTS high_scores (id TEXT PRIMARY KEY, userId TEXT, pilotName TEXT, score INTEGER, timestamp INTEGER);
     CREATE TABLE IF NOT EXISTS user_profiles (uid TEXT PRIMARY KEY, name TEXT, pilotName TEXT, themePreference TEXT, createdAt INTEGER);
     CREATE TABLE IF NOT EXISTS global_config (key TEXT PRIMARY KEY, value TEXT);
   `);
+};
+
+const ensureProjectSchema = (database: Database) => {
+  const result = database.exec("PRAGMA table_info(projects)");
+  if (result.length && result[0].columns.includes('name')) {
+    const columns = result[0].values.map(col => col[1]);
+    if (!columns.includes('rightPanelTimelineIds')) {
+      database.run("ALTER TABLE projects ADD COLUMN rightPanelTimelineIds TEXT;");
+    }
+  }
 };
 
 /**
@@ -131,6 +150,18 @@ const runMigrations = (database: Database) => {
       if (!columns.includes('imageUrl')) {
         console.log("[SQLITE_MIGRATION] Adding 'imageUrl' to 'steps' table...");
         database.run("ALTER TABLE steps ADD COLUMN imageUrl TEXT");
+      }
+      if (!columns.includes('todoId')) {
+        console.log("[SQLITE_MIGRATION] Adding 'todoId' to 'steps' table...");
+        database.run("ALTER TABLE steps ADD COLUMN todoId TEXT");
+      }
+      if (!columns.includes('timelineId')) {
+        console.log("[SQLITE_MIGRATION] Adding 'timelineId' to 'steps' table...");
+        database.run("ALTER TABLE steps ADD COLUMN timelineId TEXT");
+      }
+      if (!columns.includes('history')) {
+        console.log("[SQLITE_MIGRATION] Adding 'history' to 'steps' table...");
+        database.run("ALTER TABLE steps ADD COLUMN history TEXT");
       }
     }
     
@@ -157,6 +188,22 @@ const runMigrations = (database: Database) => {
       if (!columns.includes('version')) {
         console.log("[SQLITE_MIGRATION] Adding 'version' to 'projects' table...");
         database.run("ALTER TABLE projects ADD COLUMN version TEXT");
+      }
+      if (!columns.includes('tabOrder')) {
+        console.log("[SQLITE_MIGRATION] Adding 'tabOrder' to 'projects' table...");
+        database.run("ALTER TABLE projects ADD COLUMN tabOrder TEXT");
+      }
+      if (!columns.includes('timelines')) {
+        console.log("[SQLITE_MIGRATION] Adding 'timelines' to 'projects' table...");
+        database.run("ALTER TABLE projects ADD COLUMN timelines TEXT");
+      }
+      if (!columns.includes('snippets')) {
+        console.log("[SQLITE_MIGRATION] Adding 'snippets' to 'projects' table...");
+        database.run("ALTER TABLE projects ADD COLUMN snippets TEXT");
+      }
+      if (!columns.includes('rightPanelTimelineIds')) {
+        console.log("[SQLITE_MIGRATION] Adding 'rightPanelTimelineIds' to 'projects' table...");
+        database.run("ALTER TABLE projects ADD COLUMN rightPanelTimelineIds TEXT");
       }
     }
 
@@ -213,11 +260,11 @@ export const getProjectsFromDB = (): Project[] => {
       rowData[col] = row[idx];
     });
 
-    const { id, name, description, systemPrompt, icon, deletedAt, repositoryUrl, localFolderPath, todoFolderPath, defaultBranch, version } = rowData;
+    const { id, name, description, systemPrompt, icon, deletedAt, repositoryUrl, localFolderPath, todoFolderPath, defaultBranch, version, tabOrder, timelines, snippets, rightPanelTimelineIds } = rowData;
     
     const stepRes = db!.exec("SELECT * FROM steps WHERE projectId = ? ORDER BY sortOrder ASC", [id]);
     const flatSteps: any[] = stepRes.length ? stepRes[0].values.map(s => ({
-      id: s[0], projectId: s[1], parentId: s[2], title: s[3], category: s[4], status: s[5], content: s[6], notes: s[7], isTab: !!s[8], createdAt: s[9], archivedAt: s[10], imageUrl: s[12]
+      id: s[0], projectId: s[1], parentId: s[2], title: s[3], category: s[4], status: s[5], content: s[6], notes: s[7], isTab: !!s[8], createdAt: s[9], archivedAt: s[10], imageUrl: s[12], todoId: s[13] || undefined, timelineId: s[14] || undefined, history: parseJSON(s[15], [])
     })) : [];
 
     const stepsMap: Record<string, Step> = {};
@@ -240,6 +287,10 @@ export const getProjectsFromDB = (): Project[] => {
       todoFolderPath: todoFolderPath as string || undefined,
       defaultBranch: defaultBranch as string || undefined,
       version: version as string || undefined,
+      tabOrder: parseJSON<string[]>(tabOrder, undefined as any),
+      timelines: parseJSON(timelines, undefined as any),
+      snippets: parseJSON(snippets, undefined as any),
+      rightPanelTimelineIds: parseJSON<string[]>(rightPanelTimelineIds, undefined as any),
       steps: rootSteps
     };
   });
@@ -250,11 +301,11 @@ export const saveProjectsToDB = (projects: Project[]) => {
   db.run("DELETE FROM projects");
   db.run("DELETE FROM steps");
   projects.forEach(p => {
-    db!.run("INSERT INTO projects (id, name, description, systemPrompt, icon, deletedAt, repositoryUrl, localFolderPath, todoFolderPath, defaultBranch, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [p.id, p.name, p.description, p.systemPrompt, p.icon || null, p.deletedAt || null, p.repositoryUrl || null, p.localFolderPath || null, p.todoFolderPath || null, p.defaultBranch || null, p.version || null]);
+    db!.run("INSERT INTO projects (id, name, description, systemPrompt, icon, deletedAt, repositoryUrl, localFolderPath, todoFolderPath, defaultBranch, version, tabOrder, timelines, snippets, rightPanelTimelineIds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [p.id, p.name, p.description, p.systemPrompt, p.icon || null, p.deletedAt || null, p.repositoryUrl || null, p.localFolderPath || null, p.todoFolderPath || null, p.defaultBranch || null, p.version || null, p.tabOrder ? JSON.stringify(p.tabOrder) : null, p.timelines ? JSON.stringify(p.timelines) : null, p.snippets ? JSON.stringify(p.snippets) : null, p.rightPanelTimelineIds ? JSON.stringify(p.rightPanelTimelineIds) : null]);
     const saveStep = (step: Step, parentId: string | null, index: number) => {
       // Robust fix: Use INSERT OR REPLACE to avoid UNIQUE constraint collisions on duplicate step hierarchies
-      db!.run("INSERT OR REPLACE INTO steps (id, projectId, parentId, title, category, status, content, notes, isTab, createdAt, archivedAt, sortOrder, imageUrl) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [step.id, p.id, parentId, step.title, step.category, step.status, step.content, step.notes || null, step.isTab ? 1 : 0, step.createdAt || Date.now(), step.archivedAt || null, index, step.imageUrl || null]
+      db!.run("INSERT OR REPLACE INTO steps (id, projectId, parentId, title, category, status, content, notes, isTab, createdAt, archivedAt, sortOrder, imageUrl, todoId, timelineId, history) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [step.id, p.id, parentId, step.title, step.category, step.status, step.content, step.notes || null, step.isTab ? 1 : 0, step.createdAt || Date.now(), step.archivedAt || null, index, step.imageUrl || null, step.todoId || null, step.timelineId || null, step.history ? JSON.stringify(step.history) : null]
       );
       if (step.subSteps) step.subSteps.forEach((sub, subIdx) => saveStep(sub, step.id, subIdx));
     };

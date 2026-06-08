@@ -36,6 +36,8 @@ export interface Project {
   steps: Step[];
   snippets?: Snippet[];
   tabOrder?: string[];
+  timelines?: Timeline[];
+  rightPanelTimelineIds?: string[];
 }
 
 export interface Step {
@@ -52,8 +54,15 @@ export interface Step {
   archivedAt?: number;
   imageUrl?: string;
   todoId?: string;
+  timelineId?: string;
   subSteps?: Step[];
   history?: StepVersion[];
+}
+
+export interface Timeline {
+  id: string;
+  title: string;
+  archivedAt?: number;
 }
 
 export interface StepVersion {

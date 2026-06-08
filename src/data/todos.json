@@ -33,34 +33,5 @@
     "backend"
   ],
   "collections": [],
-  "todos": [
-    {
-      "id": "todo-TD597102",
-      "title": "Site update",
-      "date": "2026-06-03",
-      "days": 0,
-      "description": "sample",
-      "type": "frontend",
-      "status": "To Do",
-      "assign": "Unassigned",
-      "subtask": [],
-      "comments": "",
-      "commitMessage": "",
-      "collection": ""
-    },
-    {
-      "id": "todo-TD983468",
-      "title": "test",
-      "date": "2026-06-03",
-      "days": 0,
-      "description": "test",
-      "type": "feat",
-      "status": "Unassigned",
-      "assign": "ron tea",
-      "subtask": [],
-      "comments": "",
-      "commitMessage": "",
-      "collection": ""
-    }
-  ]
+  "todos": []
 }

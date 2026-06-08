@@ -52,24 +52,24 @@ export const TimelineStepActions: React.FC<TimelineStepActionsProps> = ({
           </>
         )}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <button 
           onClick={() => handlers.handleSmartCopy(step)} 
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-xs font-bold uppercase transition-all ${isCopied ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-500' : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400'}`}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-bold uppercase transition-all flex-shrink-0 ${isCopied ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/30 text-emerald-600 dark:text-emerald-500' : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:text-cyan-600 dark:hover:text-cyan-400'}`}
         >
           {isCopied ? <Check size={16} /> : <Copy size={16} />}
           <span className="hidden sm:inline">{isCopied ? 'Copied' : 'Copy'}</span>
         </button>
         <button 
           onClick={() => handlers.handleToggleTab(step.id)} 
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 transition-all border border-transparent ${step.isTab ? 'text-amber-600 dark:text-amber-500' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 transition-all border border-transparent flex-shrink-0 ${step.isTab ? 'text-amber-600 dark:text-amber-500' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
         >
           <AppWindow size={16} />
           <span className="text-xs font-bold uppercase hidden sm:inline">{step.isTab ? 'Tab Active' : 'Tab'}</span>
         </button>
         <button 
           onClick={() => handlers.handleDuplicateStep(step.id)} 
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-all"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 transition-all flex-shrink-0"
         >
           <Files size={16} />
           <span className="text-xs font-bold uppercase hidden sm:inline">Duplicate</span>
@@ -78,7 +78,7 @@ export const TimelineStepActions: React.FC<TimelineStepActionsProps> = ({
           <button 
             onClick={() => handlers.handleGenerateToTodo?.(step)} 
             disabled={handlers.loadingStepToTodo === step.id}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 transition-all border border-transparent ${handlers.loadingStepToTodo === step.id ? 'opacity-50 cursor-not-allowed' : 'text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-500'}`}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 transition-all border border-transparent flex-shrink-0 ${handlers.loadingStepToTodo === step.id ? 'opacity-50 cursor-not-allowed' : 'text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-500'}`}
           >
             <ListTodo size={16} className={handlers.loadingStepToTodo === step.id ? 'animate-pulse' : ''} />
             <span className="text-xs font-bold uppercase hidden sm:inline">
@@ -88,7 +88,7 @@ export const TimelineStepActions: React.FC<TimelineStepActionsProps> = ({
         )}
         <button 
           onClick={() => handlers.handleAddSubStep(step.id)} 
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 flex-shrink-0"
         >
           <GitBranch size={16} />
           <span className="text-xs font-bold uppercase hidden sm:inline">Sub-Task</span>
@@ -96,7 +96,7 @@ export const TimelineStepActions: React.FC<TimelineStepActionsProps> = ({
         {handlers.handleCommitStep && (
           <button 
             onClick={() => handlers.handleCommitStep?.(step)} 
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-500 transition-all"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-500 transition-all flex-shrink-0"
           >
             <GitCommit size={16} />
             <span className="text-xs font-bold uppercase hidden sm:inline">Commit</span>
@@ -104,14 +104,14 @@ export const TimelineStepActions: React.FC<TimelineStepActionsProps> = ({
         )}
         <button 
           onClick={() => onEditClick(step)} 
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-800 dark:bg-slate-700 text-white hover:bg-cyan-600 dark:hover:bg-cyan-500"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 dark:bg-slate-700 text-white hover:bg-cyan-600 dark:hover:bg-cyan-500 flex-shrink-0"
         >
           <Edit2 size={16} />
           <span className="text-xs font-bold uppercase hidden sm:inline">Edit</span>
         </button>
         <button 
           onClick={() => handlers.handleDeleteStep(step.id)} 
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 dark:text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-all"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-950/80 text-slate-500 dark:text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-all flex-shrink-0"
         >
           <Archive size={16} />
           <span className="text-xs font-bold uppercase hidden sm:inline">Archive</span>

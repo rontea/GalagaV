@@ -13,6 +13,7 @@ interface Commit {
   authorName: string;
   relativeTime: string;
   subject: string;
+  body: string;
   refs: string;
   parents: string;
 }
@@ -31,8 +32,7 @@ export const GitHistoryModal: React.FC<GitHistoryModalProps> = ({ project, onClo
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            // delimiter: |:|
-            command: 'git log --all -n 100 --pretty=format:"%H|:|%h|:|%an|:|%ar|:|%s|:|%d|:|%p"',
+            command: 'git log --all -n 100 --pretty=format:%H%x1f%h%x1f%an%x1f%ar%x1f%s%x1f%d%x1f%p%x1f%b%x1e',
             cwd: project?.localFolderPath || undefined
           })
         });
@@ -57,8 +57,8 @@ export const GitHistoryModal: React.FC<GitHistoryModalProps> = ({ project, onClo
           }
         }
 
-        const parsedCommits = output.split('\n').filter(line => line.trim().length > 0).map(line => {
-          const parts = line.split('|:|');
+        const parsedCommits = output.split('\x1e').filter(record => record.trim().length > 0).map(record => {
+          const parts = record.split('\x1f');
           return {
             hash: parts[0] || '',
             abbrevHash: parts[1] || '',
@@ -66,7 +66,8 @@ export const GitHistoryModal: React.FC<GitHistoryModalProps> = ({ project, onClo
             relativeTime: parts[3] || '',
             subject: parts[4] || '',
             refs: parts[5] ? parts[5].trim().replace(/^\(|\)$/g, '') : '',
-            parents: parts[6] || ''
+            parents: parts[6] || '',
+            body: parts[7] || ''
           };
         });
 
@@ -137,9 +138,13 @@ export const GitHistoryModal: React.FC<GitHistoryModalProps> = ({ project, onClo
                           <div className="relative w-2.5 h-2.5 rounded-full bg-indigo-500 ring-4 ring-[#0d1117] z-10" />
                         </div>
                         <div className="flex flex-col">
-                          <span className="text-sm text-slate-200 group-hover:text-white transition-colors">{commit.subject}</span>
+                          <span className="text-sm font-semibold text-slate-200 group-hover:text-white transition-colors">{commit.subject}</span>
+                          <div className="mt-2 text-[10px] uppercase tracking-wide text-slate-500">Commit message</div>
+                          <div className="mt-1 text-xs text-slate-400 whitespace-pre-wrap leading-5 border-l border-slate-800 pl-3">
+                            {([commit.subject, commit.body?.trim()].filter(Boolean) as string[]).join('\n\n')}
+                          </div>
                           {commit.refs && (
-                            <div className="flex flex-wrap gap-1 mt-1.5">
+                            <div className="flex flex-wrap gap-1 mt-3">
                               {commit.refs.split(',').map((ref, idx) => {
                                 const trimmed = ref.trim();
                                 const isHead = trimmed.includes('HEAD');

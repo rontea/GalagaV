@@ -60,6 +60,25 @@ export class TodoService {
     return this.isSyncing;
   }
 
+  private static hasTodoMarkdownFiles(dirPath: string): boolean {
+    if (!fs.existsSync(dirPath)) return false;
+
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      const entryPath = path.join(dirPath, entry.name);
+      if (entry.isDirectory()) {
+        if (this.hasTodoMarkdownFiles(entryPath)) return true;
+        continue;
+      }
+
+      if (entry.name === 'TODO.md' || /^todo-(?:TD\d{6}|[a-zA-Z0-9-]+)\.md$/.test(entry.name)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   public static resolvePaths(
     todoFolderPath?: string,
     localFolderPath?: string,
@@ -136,28 +155,21 @@ export class TodoService {
     const mdFileName = syncCollection ? `todo-${syncCollection}.md` : 'TODO.md';
     const mdFilePath = path.join(dirPath, mdFileName);
     
+    const allExistingTodos = TodoModel.getTodos();
+    const archivedTodos = allExistingTodos.filter(t => t.archivedAt);
+
+    if (!syncCollection && !this.hasTodoMarkdownFiles(dirPath)) {
+      TodoModel.saveAllTodos(archivedTodos);
+      this.updateMarkdownFileTodos([], todoFolderPath, localFolderPath, true);
+      this.cleanupOrphanedTodoFiles(new Set(), todoFolderPath, localFolderPath);
+      return archivedTodos;
+    }
+
     let content = '';
     if (fs.existsSync(mdFilePath)) {
       content = fs.readFileSync(mdFilePath, 'utf8');
     } else {
-      // If the file does not exist, and there are database tasks, write them as initialization
-      const allExistingTodos = TodoModel.getTodos();
-      const currentCollectionTodos = allExistingTodos.filter(t => (t.collection || '') === syncCollection && !t.archivedAt);
-      if (currentCollectionTodos.length > 0) {
-        console.log(`[TodoService] TODO file not found at ${mdFilePath}. Auto-initializing directory and writing ${currentCollectionTodos.length} database tasks.`);
-        if (!fs.existsSync(dirPath)) {
-          fs.mkdirSync(dirPath, { recursive: true });
-        }
-        this.updateMarkdownFileTodos(allExistingTodos, todoFolderPath, localFolderPath, true);
-        currentCollectionTodos.forEach(t => this.writeTodoToIndividualFile(t, todoFolderPath, localFolderPath));
-        if (fs.existsSync(mdFilePath)) {
-          content = fs.readFileSync(mdFilePath, 'utf8');
-        } else {
-          return allExistingTodos;
-        }
-      } else {
-        content = '';
-      }
+      content = '';
     }
 
     const firstIndex = content.search(/\[[ x]\] Title:/);
@@ -168,8 +180,7 @@ export class TodoService {
       todoBlocks = todosText.split(/(?=\[[ x]\] Title: )/).filter(b => b.trim().length > 0);
     }
     
-    const allExistingTodos = TodoModel.getTodos();
-    const otherCollectionTodos = allExistingTodos.filter(t => (t.collection || '') !== syncCollection || t.archivedAt);
+    const otherCollectionTodos = allExistingTodos.filter(t => (t.collection || '') !== syncCollection && !t.archivedAt);
     const titleToTodo = new Map(allExistingTodos.filter(t => (t.collection || '') === syncCollection && !t.archivedAt).map(t => [t.title.trim().toLowerCase(), t]));
     
     const parsedTodos: Todo[] = [];
@@ -276,7 +287,9 @@ export class TodoService {
     }
 
     // Update global list correctly
-    const finalTodos = [...otherCollectionTodos, ...parsedTodos];
+    const parsedTodoIds = new Set(parsedTodos.map(t => t.id));
+    const preservedArchivedTodos = archivedTodos.filter(t => !parsedTodoIds.has(t.id));
+    const finalTodos = [...preservedArchivedTodos, ...otherCollectionTodos, ...parsedTodos];
     TodoModel.saveAllTodos(finalTodos);
 
     // Also update individual files for this collection
@@ -285,7 +298,7 @@ export class TodoService {
     // We don't call updateMarkdownFileTodos hier to avoid recursion but we should technically ensure the file is clean
     // Actually, syncFromFiles is often followed by a write to file elsewhere or by the user manually.
     // To be safe, we can trigger a CLEAN update of THIS file.
-    this.updateMarkdownFileTodos(finalTodos, todoFolderPath, localFolderPath, true);
+    this.updateMarkdownFileTodos(finalTodos.filter(t => !t.archivedAt), todoFolderPath, localFolderPath, true);
     
     return finalTodos;
     } finally {
@@ -355,7 +368,8 @@ export class TodoService {
   static addTodo(todo: Todo, todoFolderPath?: string, localFolderPath?: string) {
     TodoModel.saveTodo(todo);
     const todos = TodoModel.getTodos();
-    this.updateMarkdownFileTodos(todos, todoFolderPath, localFolderPath, true);
+    const activeTodos = todos.filter(t => !t.archivedAt);
+    this.updateMarkdownFileTodos(activeTodos, todoFolderPath, localFolderPath, true);
     this.writeTodoToIndividualFile(todo, todoFolderPath, localFolderPath);
   }
 
@@ -365,7 +379,8 @@ export class TodoService {
     
     TodoModel.updateTodo(todo);
     const todos = TodoModel.getTodos();
-    this.updateMarkdownFileTodos(todos, todoFolderPath, localFolderPath, true);
+    const activeTodos = todos.filter(t => !t.archivedAt);
+    this.updateMarkdownFileTodos(activeTodos, todoFolderPath, localFolderPath, true);
 
     if (oldTodo && oldTodo.collection !== todo.collection) {
       // Delete old file if collection changed
@@ -424,15 +439,45 @@ export class TodoService {
 
       const mdFilePath = path.join(currentDirPath, mdFileName);
       
+      if (colTodos.length === 0) {
+        if (fs.existsSync(mdFilePath)) {
+          fs.unlinkSync(mdFilePath);
+          console.log(`Removed empty todo summary file: ${mdFilePath}`);
+        }
+        continue;
+      }
+
       let headerText = '';
       const defaultHeaderText = col ? `# ${col} TODO\n\n` : `# Project TODO\n\n`;
 
       if (fs.existsSync(mdFilePath)) {
         const existingContent = fs.readFileSync(mdFilePath, 'utf8');
-        const firstIndex = existingContent.search(/\[[ x]\] Title:/);
-        if (firstIndex !== -1) {
-          headerText = existingContent.substring(0, firstIndex);
+        const firstTitleIndex = existingContent.search(/\[[ x]\] Title:/);
+        const firstChecklistIndex = existingContent.search(/^\s*[-*]\s+\[[ x]\]\s+/m);
+
+        // Find where todo content starts (either format)
+        const todoStartIndex = Math.min(
+          firstTitleIndex !== -1 ? firstTitleIndex : Infinity,
+          firstChecklistIndex !== -1 ? firstChecklistIndex : Infinity
+        );
+
+        if (todoStartIndex !== Infinity) {
+          // Extract only markdown headers before first todo
+          const beforeTodos = existingContent.substring(0, todoStartIndex);
+          const lines = beforeTodos.split('\n');
+          const headerLines = [];
+          for (const line of lines) {
+            // Only preserve actual markdown headers and blank lines, stop at any list/content
+            if (line.startsWith('#') || line.trim() === '' || /^\s*$/.test(line)) {
+              headerLines.push(line);
+            } else {
+              // Stop if we hit any other content
+              break;
+            }
+          }
+          headerText = headerLines.join('\n').replace(/\s+$/, '');
         } else {
+          // No todos in file, preserve entire content as header
           headerText = existingContent;
         }
       } else {
@@ -441,6 +486,9 @@ export class TodoService {
 
       // Ensure header ends with enough newlines
       headerText = headerText.replace(/\s+$/, '');
+      if (headerText.length > 0 && !headerText.startsWith('#')) {
+        headerText = defaultHeaderText;
+      }
       if (headerText.length > 0) {
         headerText += '\n\n';
       } else {
@@ -568,45 +616,87 @@ export class TodoService {
     const todo = TodoModel.getTodos().find(t => t.id === id);
     TodoModel.deleteTodo(id);
     const todos = TodoModel.getTodos();
+    const activeTodoIds = new Set(todos.filter(t => !t.archivedAt).map(t => t.id));
+
     this.updateMarkdownFileTodos(todos.filter(t => !t.archivedAt), todoFolderPath, localFolderPath, true);
 
     if (todo) {
-      // Also remove the individual markdown file
-      let dirPath = this.resolvePaths(todoFolderPath, localFolderPath);
-
-      if (todo.collection) {
-        dirPath = path.join(dirPath, todo.collection);
-      }
-      
-      const mdFilePath = path.join(dirPath, `todo-${id}.md`);
-      if (fs.existsSync(mdFilePath)) {
-        fs.unlinkSync(mdFilePath);
-        console.log(`Deleted file: ${mdFilePath}`);
-      }
+      this.removeTodoFile(todo, todoFolderPath, localFolderPath);
     }
+
+    this.cleanupOrphanedTodoFiles(activeTodoIds, todoFolderPath, localFolderPath);
   }
 
   static archiveTodo(id: string, todoFolderPath?: string, localFolderPath?: string) {
     const todo = TodoModel.getTodos().find(t => t.id === id);
     TodoModel.archiveTodo(id);
     const todos = TodoModel.getTodos();
-    
+    const activeTodoIds = new Set(todos.filter(t => !t.archivedAt).map(t => t.id));
+
     // Pass only active todos to updateMarkdownFileTodos to remove archived one from file
     this.updateMarkdownFileTodos(todos.filter(t => !t.archivedAt), todoFolderPath, localFolderPath, true);
 
     if (todo) {
-      // Also remove the individual markdown file
+      this.removeTodoFile(todo, todoFolderPath, localFolderPath);
+    }
+
+    this.cleanupOrphanedTodoFiles(activeTodoIds, todoFolderPath, localFolderPath);
+  }
+
+  private static removeTodoFile(todo: Todo, todoFolderPath?: string, localFolderPath?: string) {
+    try {
       let dirPath = this.resolvePaths(todoFolderPath, localFolderPath);
 
       if (todo.collection) {
         dirPath = path.join(dirPath, todo.collection);
       }
-      
-      const mdFilePath = path.join(dirPath, `todo-${id}.md`);
+
+      const mdFilePath = path.join(dirPath, `todo-${todo.id}.md`);
       if (fs.existsSync(mdFilePath)) {
         fs.unlinkSync(mdFilePath);
-        console.log(`Archived (removed file): ${mdFilePath}`);
+        console.log(`Removed todo file: ${mdFilePath}`);
       }
+    } catch (err) {
+      console.error(`Failed to remove todo file for ${todo.id}:`, err);
     }
+  }
+
+  private static cleanupOrphanedTodoFiles(activeTodoIds: Set<string>, todoFolderPath?: string, localFolderPath?: string) {
+    let dirPath: string;
+    try {
+      dirPath = this.resolvePaths(todoFolderPath, localFolderPath, { allowAppFallback: true });
+    } catch (err) {
+      console.warn('[TodoService] Unable to resolve cleanup directory:', err);
+      return;
+    }
+
+    const walkDir = (currentPath: string) => {
+      if (!fs.existsSync(currentPath)) return;
+      const entries = fs.readdirSync(currentPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const entryPath = path.join(currentPath, entry.name);
+        if (entry.isDirectory()) {
+          walkDir(entryPath);
+          const remaining = fs.readdirSync(entryPath);
+          if (remaining.length === 0) {
+            fs.rmdirSync(entryPath);
+            console.log(`Removed empty directory: ${entryPath}`);
+          }
+          continue;
+        }
+
+        const todoMatch = entry.name.match(/^todo-(todo-TD[0-9]{6})\.md$/);
+        if (todoMatch) {
+          const candidateId = todoMatch[1];
+          if (!activeTodoIds.has(candidateId)) {
+            fs.unlinkSync(entryPath);
+            console.log(`Removed orphaned archived todo file: ${entryPath}`);
+          }
+        }
+      }
+    };
+
+    walkDir(dirPath);
   }
 }

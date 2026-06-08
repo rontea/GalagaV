@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Bot, Archive, Settings, Terminal, Database, Sparkles, BookOpen, CheckSquare, Github, Folder, GitBranch, Tag, History, RefreshCw } from 'lucide-react';
+import { Bot, Archive, Settings, Terminal, Database, Sparkles, BookOpen, CheckSquare, Github, Folder, GitBranch, Tag, History, RefreshCw, GitMerge } from 'lucide-react';
 import { Project } from '../types';
 import { FULL_ICON_MAP } from './ProjectList';
 
@@ -14,6 +14,7 @@ interface ProjectBriefProps {
   onOpenTodos?: () => void;
   onOpenTerminal?: () => void;
   onOpenCommit?: () => void;
+  onOpenMerge?: () => void;
   onOpenHistory?: () => void;
   isArchitectHidden?: boolean;
 }
@@ -28,6 +29,7 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
   onOpenTodos,
   onOpenTerminal,
   onOpenCommit,
+  onOpenMerge,
   onOpenHistory,
   isArchitectHidden
 }) => {
@@ -282,6 +284,16 @@ export const ProjectBrief: React.FC<ProjectBriefProps> = ({
           <BookOpen size={18} className="group-hover/snip-btn:scale-110 transition-transform" />
           <span className="text-[10px] font-bold uppercase tracking-wider hidden sm:inline">Snippets</span>
         </button>
+        {onOpenMerge && (
+          <button 
+            onClick={() => onOpenMerge()} 
+            className="flex items-center gap-2 px-3 py-2 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 transition-all bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-500/30 hover:border-emerald-400 shadow-sm group/merge-btn" 
+            title="Open merge flow"
+          >
+            <GitMerge size={18} className="group-hover/merge-btn:scale-110 transition-transform" />
+            <span className="text-[10px] font-bold uppercase tracking-wider">Merge</span>
+          </button>
+        )}
         {(!hasArchitect || isArchitectHidden) && (
           <button 
             onClick={onInitializeArchitect} 

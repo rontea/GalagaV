@@ -9,7 +9,7 @@ import ProjectSettingsModal from './ProjectSettingsModal';
 import ArchitectView from './ArchitectView';
 import TodoManagerView from '../src/frontend/components/TodoManagerView';
 import TerminalView from '../src/frontend/components/TerminalView';
-import { Layout, Plus, AppWindow, Blocks, Database, BookOpen, X, CheckSquare, Terminal } from 'lucide-react';
+import { Layout, Plus, AppWindow, Blocks, Database, BookOpen, X, CheckSquare, Terminal, ChevronLeft, ChevronRight } from 'lucide-react';
 import { BASE_CATEGORIES, BASE_STATUSES, createCategoryStyle, copyToClipboard } from '../lib/ui-constants';
 import { ProjectBrief } from './ProjectBrief';
 import { TimelineStepCard } from './TimelineStepCard';
@@ -67,7 +67,30 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
 
   const [toastMessage, setToastMessage] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
+  // Timeline/modal/right-panel state
+  const [showNewTimelineModal, setShowNewTimelineModal] = useState(false);
+  const [newTimelineTitle, setNewTimelineTitle] = useState('');
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(false);
+  const [rightPanelTimelineIds, setRightPanelTimelineIds] = useState<string[]>(project.rightPanelTimelineIds || []);
+
+  const activeTimelineId = useMemo(() => {
+    if (activeTab === 'timeline') return 'all';
+    if (activeTab && activeTab.startsWith('timeline-')) return activeTab.replace('timeline-', '');
+    return 'all';
+  }, [activeTab]);
+
+  const activeTimeline = useMemo(() => {
+    if (activeTimelineId === 'all') return { id: 'all', title: 'All Timelines' } as any;
+    return (project.timelines || []).find((t: any) => t.id === activeTimelineId) || { id: activeTimelineId, title: 'Timeline' } as any;
+  }, [activeTimelineId, project.timelines]);
+
   useEffect(() => { setFocusedEditing(false); setFocusedForm(null); }, [activeTab]);
+
+  useEffect(() => {
+    if (project.rightPanelTimelineIds) {
+      setRightPanelTimelineIds(project.rightPanelTimelineIds);
+    }
+  }, [project.rightPanelTimelineIds]);
 
   const allCategories = useMemo(() => {
     const cats = { ...BASE_CATEGORIES };
@@ -83,6 +106,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
 
   const activeSteps = project.steps.filter(s => !s.archivedAt && s.id !== 'architect_schema_data');
   const archivedSteps = project.steps.filter(s => s.archivedAt);
+  const archivedTimelines = (project.timelines || []).filter(t => t.archivedAt);
   const tabSteps = activeSteps.filter(s => s.isTab);
   const hasArchitect = project.steps.some(s => s.id === 'architect_schema_data');
   const enabledToolPlugins = (globalConfig.plugins || []).filter(p => p.enabled && p.manifest.type !== 'theme');
@@ -103,6 +127,11 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
       coreTabs.push({ id: 'todos', label: 'TODO Manager', icon: <CheckSquare size={14} />, type: 'core', color: 'emerald' });
     }
 
+    // Timeline tabs (from project.timelines), exclude pinned timelines and archived/default
+    const timelineTabs: TabItem[] = (project.timelines || []).filter((t: any) => !t.archivedAt && t.id !== 'default' && !rightPanelTimelineIds.includes(t.id)).map((t: any) => ({
+      id: `timeline-${t.id}`, label: t.title || 'Timeline', icon: <Layout size={14} />, type: 'core', color: 'cyan'
+    }));
+
     const stepTabs: TabItem[] = tabSteps.map(s => ({
       id: s.id, label: s.title || 'Untitled', icon: <AppWindow size={14} />, type: 'step', color: 'amber'
     }));
@@ -111,7 +140,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
       id: p.id, label: p.manifest?.name || p.id, icon: <Blocks size={14} />, type: 'plugin', color: 'indigo'
     }));
 
-    const allAvailable = [...coreTabs, ...stepTabs, ...pluginTabs];
+    const allAvailable = [...coreTabs, ...timelineTabs, ...stepTabs, ...pluginTabs];
     
     // Sort based on project.tabOrder if it exists
     if (project.tabOrder && project.tabOrder.length > 0) {
@@ -124,7 +153,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     }
 
     return allAvailable;
-  }, [hasArchitect, tabSteps, enabledToolPlugins, project.tabOrder]);
+  }, [hasArchitect, tabSteps, enabledToolPlugins, project.tabOrder, project.timelines, rightPanelTimelineIds]);
 
   const handleTabDragStart = (id: string) => {
     setDraggedTabId(id);
@@ -203,12 +232,83 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
     setEditFormData(newStep);
   };
 
+  // --- Timeline helpers (new) ---
+  const getNewTimelineTitle = () => {
+    const count = (project.timelines || []).filter(t => t.id !== 'default').length + 1;
+    return `Timeline ${count}`;
+  };
+
+  const handleOpenNewTimelineModal = () => {
+    setNewTimelineTitle(getNewTimelineTitle());
+    setShowNewTimelineModal(true);
+  };
+
+  const handleCreateTimeline = (title?: string) => {
+    const normalizedTitle = (title || getNewTimelineTitle()).trim() || getNewTimelineTitle();
+    const newTimeline = { id: `timeline_${Date.now()}`, title: normalizedTitle } as any;
+    const currentTimelines = (project.timelines || []).filter((t: any) => t.id !== 'default');
+    const newTabId = `timeline-${newTimeline.id}`;
+    const updatedTabOrder = project.tabOrder ? [...project.tabOrder, newTabId] : [newTabId];
+    onUpdateProject({ ...project, timelines: [...currentTimelines, newTimeline], tabOrder: updatedTabOrder });
+    setShowNewTimelineModal(false);
+    setActiveTab(newTabId);
+  };
+
+  const handleToggleRightPanel = () => setIsRightPanelOpen(p => !p);
+
+  const handleMoveTimelineToRightPanel = (timelineId?: string) => {
+    // timelineId optional: derive from activeTab if not provided
+    const id = timelineId || (activeTab?.startsWith('timeline-') ? activeTab.replace(/^timeline-/, '') : undefined);
+    if (!id) return;
+    const tabId = `timeline-${id}`;
+    if (rightPanelTimelineIds.includes(id)) {
+      // unpin: just remove from right panel, DON'T add back to tabOrder
+      const newPinned = rightPanelTimelineIds.filter(x => x !== id);
+      setRightPanelTimelineIds(newPinned);
+      onUpdateProject({ ...project, rightPanelTimelineIds: newPinned });
+    } else {
+      // pin: add to pinned and remove its tab from tabOrder
+      const newPinned = [...rightPanelTimelineIds, id];
+      const updatedTabOrder = (project.tabOrder || []).filter((t: string) => t !== tabId);
+      setRightPanelTimelineIds(newPinned);
+      onUpdateProject({ ...project, tabOrder: updatedTabOrder, rightPanelTimelineIds: newPinned });
+    }
+    setIsRightPanelOpen(true);
+  };
+
+  const handleMoveTimelineToTabs = (timelineId: string) => {
+    const tabId = `timeline-${timelineId}`;
+    const updatedTabOrder = project.tabOrder ? Array.from(new Set([...(project.tabOrder || []), tabId])) : [tabId];
+    const newPinned = rightPanelTimelineIds.filter(id => id !== timelineId);
+    setRightPanelTimelineIds(newPinned);
+    onUpdateProject({ ...project, tabOrder: updatedTabOrder, rightPanelTimelineIds: newPinned });
+  };
+
   const handleDeleteStep = (stepId: string) => {
     setConfirmModal({ isOpen: true, title: "Archive Task?", message: "Archive this task?", isDanger: false, onConfirm: () => {
       onUpdateProject({ ...project, steps: project.steps.map(s => s.id === stepId ? { ...s, archivedAt: Date.now() } : s) });
       if (activeTab === stepId) setActiveTab('timeline');
       setConfirmModal(null);
     }});
+  };
+
+  const handleDeleteTimeline = (timelineId: string) => {
+    const timeline = (project.timelines || []).find(t => t.id === timelineId);
+    setConfirmModal({ isOpen: true, title: "Archive Timeline?", message: `Are you sure you want to archive "${timeline?.title}"? You can restore it later from the archive.`, isDanger: false, onConfirm: () => {
+      const newRightPanel = rightPanelTimelineIds.filter(id => id !== timelineId);
+      setRightPanelTimelineIds(newRightPanel);
+      onUpdateProject({ ...project, timelines: (project.timelines || []).map(t => t.id === timelineId ? { ...t, archivedAt: Date.now() } : t), rightPanelTimelineIds: newRightPanel });
+      if (activeTab === `timeline-${timelineId}`) setActiveTab('timeline');
+      setConfirmModal(null);
+    }});
+  };
+
+  const handleRestoreTimeline = (timelineId: string) => {
+    onUpdateProject({ ...project, timelines: (project.timelines || []).map(t => t.id === timelineId ? { ...t, archivedAt: undefined } : t) });
+  };
+
+  const handlePermanentDeleteTimeline = (timelineId: string) => {
+    onUpdateProject({ ...project, timelines: (project.timelines || []).filter(t => t.id !== timelineId) });
   };
 
   const handleDuplicateStep = (stepId: string) => {
@@ -642,6 +742,14 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
               </div>
             </button>
           ))}
+          <button
+            type="button"
+            onClick={handleOpenNewTimelineModal}
+            className="ml-auto inline-flex items-center gap-2 rounded-full border border-cyan-400 bg-cyan-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-cyan-500"
+          >
+            <Plus size={14} />
+            New Timeline
+          </button>
         </div>
       </div>
 
@@ -652,8 +760,27 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
           </div>
         ) : (
           <div className="px-4 sm:px-8 py-8">
-            {activeTab === 'timeline' ? (
+            {(activeTab === 'timeline' || activeTab?.startsWith('timeline-')) ? (
             <div className="space-y-8">
+               <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-4 shadow-sm mb-2 dark:border-slate-700 dark:bg-slate-900">
+                 <div>
+                   <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{activeTimeline.title}</p>
+                   <p className="text-xs text-slate-500 dark:text-slate-400">{activeTimelineId === 'all' ? 'Showing all timelines' : `Showing timeline: ${activeTimeline.title}`}</p>
+                 </div>
+                 <div className="flex items-center gap-2">
+                   {activeTimelineId !== 'all' && (
+                     <button type="button" onClick={() => handleMoveTimelineToRightPanel(activeTimelineId)} className={`rounded-full border px-3 py-1 text-sm font-semibold transition ${rightPanelTimelineIds.includes(activeTimelineId) ? 'border-emerald-500 bg-emerald-600 text-white hover:bg-emerald-500' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'}`}>
+                       {rightPanelTimelineIds.includes(activeTimelineId) ? 'Remove from Right' : 'Move to Right'}
+                     </button>
+                   )}
+                   <button type="button" onClick={handleToggleRightPanel} className="rounded-full border px-3 py-1 text-sm">{isRightPanelOpen ? 'Close Right' : 'Open Right'}</button>
+                   {activeTimelineId !== 'all' && (
+                     <button type="button" onClick={() => handleDeleteTimeline(activeTimelineId)} className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1 text-sm font-semibold text-rose-600 transition hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-400 dark:hover:bg-rose-950/60">
+                       Remove
+                     </button>
+                   )}
+                 </div>
+               </div>
                <ProjectBrief 
                  project={project} 
                  onDeleteProject={onDeleteProject} 
@@ -687,7 +814,7 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
                     <TimelineStepCard key={step.id} step={step} index={index} isLast={index === activeSteps.length - 1} isEditing={editingStepId === step.id} editFormData={editFormData} allCategories={allCategories} allStatuses={allStatuses} snippets={project.snippets} isCopied={copiedStepId === step.id} isDragging={draggedId === step.id} isDragTargetCard={dragTarget?.id === step.id && dragTarget.type === 'card'} dragTargetGapPosition={dragTarget?.id === step.id && dragTarget.type === 'gap' ? dragTarget.position : undefined} isShrunk={(step.status === 'completed' || step.status === 'failed') && !expandedCompletedSteps[step.id] && editingStepId !== step.id} isHistoryExpanded={!!expandedHistory[step.id]} activeNoteId={activeNoteId} handlers={{ updateField, handleCancelEdit, handleSaveStep, handleMainImageUpload, handleEditClick, toggleCompletedStep, toggleHistory, handleSmartCopy, handleToggleTab, handleDuplicateStep, handleAddSubStep, handleDeleteStep, handleLinkTodoToStep, handleNavigateToTodo, setActiveNoteId, handleUpdateNote, handleDragStart, handleDragEnd, handleDragOver, handleDrop, setDragTarget, ...subTaskDndHandlers, handlePromoteSubStep, handleDeleteSubStep, handleUpdateSubStep, handleQuickStatusUpdate, handleGenerateToTodo, loadingStepToTodo: loadingStepToTodo as any, handleCommitStep: (s) => setCommitStep(s) }} />
                   ))}
                </div>
-               <ArchivedTasks steps={archivedSteps} onRestore={(id) => onUpdateProject({...project, steps: project.steps.map(s => s.id === id ? {...s, archivedAt: undefined} : s)})} onPermanentDelete={(id) => onUpdateProject({...project, steps: project.steps.filter(s => s.id !== id)})} />
+               <ArchivedTasks steps={archivedSteps} timelines={archivedTimelines} onRestore={(id) => onUpdateProject({...project, steps: project.steps.map(s => s.id === id ? {...s, archivedAt: undefined} : s)})} onPermanentDelete={(id) => onUpdateProject({...project, steps: project.steps.filter(s => s.id !== id)})} onRestoreTimeline={handleRestoreTimeline} onPermanentDeleteTimeline={handlePermanentDeleteTimeline} />
                <div className="fixed bottom-8 right-8 z-30"><button onClick={handleAddStep} className="flex items-center justify-center w-14 h-14 bg-cyan-600 text-white rounded-full shadow-xl hover:bg-cyan-500 transition-all"><Plus size={28} /></button></div>
                <div className="fixed bottom-8 left-8 z-30">
                  <button 
@@ -711,6 +838,31 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
           </div>
         )}
       </main>
+
+      {showNewTimelineModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/75 p-4">
+          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-3">Create New Timeline</h2>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">Enter a title for the new timeline.</p>
+            <form
+              onSubmit={(e) => { e.preventDefault(); handleCreateTimeline(newTimelineTitle); }}
+            >
+              <input
+                type="text"
+                value={newTimelineTitle}
+                onChange={e => setNewTimelineTitle(e.target.value)}
+                placeholder="Timeline title"
+                autoFocus
+                className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:ring-cyan-500/30"
+              />
+              <div className="mt-5 flex justify-end gap-3">
+                <button type="button" onClick={() => setShowNewTimelineModal(false)} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">Cancel</button>
+                <button type="submit" className="rounded-full bg-cyan-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-cyan-500">Create</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {confirmModal && <ConfirmModal isOpen={confirmModal.isOpen} title={confirmModal.title} message={confirmModal.message} confirmLabel={confirmModal.confirmLabel || "Confirm"} isDanger={confirmModal.isDanger} onConfirm={confirmModal.onConfirm} onCancel={() => setConfirmModal(null)} />}
       
@@ -741,6 +893,37 @@ const ProjectDetail: React.FC<ProjectDetailProps> = ({
           }} 
         />
       )}
+
+      {/* Right-side timeline panel (side tab visible when closed) */}
+      <div className="fixed right-0 top-1/2 z-40 -translate-y-1/2">
+        <div className="relative w-64 transition-transform duration-200" style={{ transform: isRightPanelOpen ? 'translateX(0)' : 'translateX(calc(100% - 3rem))' }}>
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 flex h-12 w-12 -translate-x-full items-center justify-center rounded-l-full border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-900">
+            <button onClick={handleToggleRightPanel} className="flex h-10 w-10 items-center justify-center rounded-full text-slate-700 dark:text-slate-100">
+              {isRightPanelOpen ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            </button>
+          </div>
+          <div className="rounded-l-xl border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+            <div className="mb-2">
+              <strong className="text-sm">Timeline</strong>
+            </div>
+            <div className="space-y-2">
+              {(project.timelines || []).filter((t:any) => rightPanelTimelineIds.includes(t.id) && !t.archivedAt).map((t:any) => (
+                <div key={t.id} className="flex items-center justify-between p-2 rounded hover:bg-slate-50 dark:hover:bg-slate-800">
+                  <div className="text-sm">{t.title}</div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => { setActiveTab(`timeline-${t.id}`); }} className="text-xs rounded border px-2">Open</button>
+                    <button onClick={() => handleMoveTimelineToTabs(t.id)} className="text-xs rounded border px-2">Move to Tabs</button>
+                    <button onClick={() => handleDeleteTimeline(t.id)} className="text-xs rounded border border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 px-2" title="Archive Timeline">Remove</button>
+                  </div>
+                </div>
+              ))}
+              {rightPanelTimelineIds.length === 0 && (
+                <div className="text-sm text-slate-500">No pinned timelines</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

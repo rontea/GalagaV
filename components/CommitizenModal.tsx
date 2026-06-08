@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle, Terminal, AlertCircle, RefreshCw, FileText, Plus, CheckSquare, Square, GitMerge } from 'lucide-react';
+import { X, CheckCircle, Terminal, AlertCircle, RefreshCw, FileText, Plus, CheckSquare, Square } from 'lucide-react';
 import { Step, Project } from '../types';
+import ConfirmModal from './ConfirmModal';
 
 interface CommitizenModalProps {
   step?: Step;
@@ -23,7 +24,7 @@ const COMMIT_TYPES = [
 ];
 
 export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project, onClose, onComplete }) => {
-  const [activeTab, setActiveTab] = useState<'changes' | 'commit' | 'merge'>('changes');
+  const [activeTab, setActiveTab] = useState<'changes' | 'commit'>('changes');
   const [type, setType] = useState('feat');
   const [scope, setScope] = useState('');
   const [subject, setSubject] = useState(step?.title || '');
@@ -32,15 +33,13 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
   const [issues, setIssues] = useState('');
   
   const [isCommitting, setIsCommitting] = useState(false);
-  const [isMerging, setIsMerging] = useState(false);
   const [isLoadingChanges, setIsLoadingChanges] = useState(false);
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mergeSuccess, setMergeSuccess] = useState<string | null>(null);
   const [commitSuccess, setCommitSuccess] = useState<string | null>(null);
   
   const [changedFiles, setChangedFiles] = useState<{file: string, status: string}[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-  const [mergeBranch, setMergeBranch] = useState('main');
 
   const fetchChanges = async () => {
     setIsLoadingChanges(true);
@@ -141,7 +140,6 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
     
     setIsCommitting(true);
     setError(null);
-    setMergeSuccess(null);
     setCommitSuccess(null);
     const message = generateCommitMessage();
     
@@ -151,12 +149,12 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
       const filesToAdd = Array.from(selectedFiles).map(f => `"${f}"`).join(' ');
       command = `git add ${filesToAdd} && git commit -m "${message.replace(/"/g, '\\"')}"`;
     } else {
-      // Nothing to commit, just proceed to merge
+      setError('No changes found to commit.');
       setIsCommitting(false);
-      setActiveTab('merge');
       return;
     }
     
+    setIsConfirmOpen(false);
     try {
       const response = await fetch('/api/terminal/execute', {
         method: 'POST',
@@ -187,10 +185,9 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
          }
       }
       
-      // Successfully committed, move to merge
+      // Successfully committed
       onComplete();
       setCommitSuccess(outputBuf.trim());
-      setActiveTab('merge');
     } catch (err: any) {
       setError(err.message || 'An error occurred while committing.');
     } finally {
@@ -198,60 +195,6 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
     }
   };
 
-  const handleMerge = async () => {
-    if (changedFiles.length > 0) {
-      setError("Please commit all changes before merging.");
-      return;
-    }
-    if (!mergeBranch.trim()) {
-      setError("Branch name is required.");
-      return;
-    }
-    
-    setIsMerging(true);
-    setError(null);
-    setMergeSuccess(null);
-    
-    const command = `git merge ${mergeBranch}`;
-    
-    try {
-      const response = await fetch('/api/terminal/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          command,
-          cwd: project?.localFolderPath || undefined
-        })
-      });
-
-      if (!response.ok) throw new Error(`Execution failed: ${response.statusText}`);
-      
-      const reader = response.body?.getReader();
-      let outputBuf = '';
-      if (reader) {
-         const decoder = new TextDecoder('utf-8');
-         while (true) {
-           const { value, done } = await reader.read();
-           if (done) break;
-           const chunk = decoder.decode(value, { stream: true });
-           const lines = chunk.split('\n').filter(line => line.trim().length > 0);
-           for (const line of lines) {
-             try {
-               const parsed = JSON.parse(line);
-               if (parsed.type === 'stdout' || parsed.type === 'stderr') outputBuf += parsed.data + '\n';
-             } catch (e) {}
-           }
-         }
-      }
-      
-      setMergeSuccess(`Successfully merged ${mergeBranch}!\n${outputBuf}`);
-      window.dispatchEvent(new Event('project-info-refresh'));
-    } catch (err: any) {
-      setError(err.message || 'An error occurred while merging.');
-    } finally {
-      setIsMerging(false);
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm">
@@ -262,8 +205,8 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
               <Terminal size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">Commit & Merge</h2>
-              <p className="text-xs text-slate-400 font-mono">Stage files, commit, and merge</p>
+              <h2 className="text-lg font-bold text-white">Commit</h2>
+              <p className="text-xs text-slate-400 font-mono">Review changes before entering commit details</p>
             </div>
           </div>
           <button onClick={onClose} className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors">
@@ -279,23 +222,17 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
             Changes ({selectedFiles.size}/{changedFiles.length})
           </button>
           <button
-            onClick={() => setActiveTab('commit')}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'commit' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-300 hover:bg-slate-800/50'}`}
-          >
-            Commit Details
-          </button>
-          <button
             onClick={() => {
-              if (changedFiles.length > 0) {
-                setError("Please commit all changes before merging.");
+              if (changedFiles.length === 0 || selectedFiles.size === 0) {
+                setError('Stage at least one file before entering commit details.');
                 return;
               }
-              setActiveTab('merge');
+              setActiveTab('commit');
             }}
-            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'merge' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-300 hover:bg-slate-800/50'} ${changedFiles.length > 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
-            title={changedFiles.length > 0 ? "Commit changes before merging" : ""}
+            className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'commit' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-400 hover:text-slate-300 hover:bg-slate-800/50'} ${(changedFiles.length === 0 || selectedFiles.size === 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+            title={(changedFiles.length === 0 || selectedFiles.size === 0) ? 'Stage at least one file before entering commit details' : ''}
           >
-            Merge
+            Commit Details
           </button>
         </div>
 
@@ -315,16 +252,6 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
               <pre className="text-xs font-mono whitespace-pre-wrap">{commitSuccess}</pre>
             </div>
           )}
-          {mergeSuccess && (
-            <div className="mb-6 p-4 bg-[#0d1117] border border-slate-700/50 rounded-xl text-slate-300 text-sm flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-emerald-400">
-                <CheckCircle size={16} className="shrink-0" />
-                <span className="font-bold">Merge Successful</span>
-              </div>
-              <pre className="text-xs font-mono whitespace-pre-wrap">{mergeSuccess}</pre>
-            </div>
-          )}
-
           {activeTab === 'changes' && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -353,13 +280,10 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
               ) : changedFiles.length === 0 ? (
                 <div className="py-12 flex flex-col items-center justify-center text-slate-500">
                   <CheckCircle size={32} className="mb-4 text-emerald-500/50" />
-                  <p>Working tree clean. No changes to commit.</p>
-                  <button 
-                    onClick={() => setActiveTab('merge')}
-                    className="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm transition-colors"
-                  >
-                    Go to Merge
-                  </button>
+                  <div className="space-y-4 text-center">
+                    <p>Working tree clean. No changes to commit.</p>
+                    <p className="text-xs text-slate-500">If you need to merge, use the separate merge button on the project timeline.</p>
+                  </div>
                 </div>
               ) : (
                 <div className="rounded-xl border border-slate-700 overflow-hidden divide-y divide-slate-800 bg-slate-800/30">
@@ -435,26 +359,6 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
             </div>
           )}
 
-          {activeTab === 'merge' && (
-            <div className="space-y-6">
-              <div className="p-4 bg-slate-800/50 border border-slate-700/50 rounded-xl">
-                <h3 className="text-sm font-semibold text-slate-200 mb-2">Merge Another Branch</h3>
-                <p className="text-xs text-slate-400 mb-4">
-                  This will execute <code className="px-1 py-0.5 bg-slate-900 rounded border border-slate-700">git merge &lt;branch&gt;</code> into your current branch.
-                </p>
-                <div className="space-y-2">
-                  <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Branch to merge</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. main, develop, feature/my-feature" 
-                    value={mergeBranch} 
-                    onChange={(e) => setMergeBranch(e.target.value)} 
-                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-slate-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono text-sm" 
-                  />
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="p-6 border-t border-slate-800 bg-slate-800/30 shrink-0">
@@ -470,13 +374,13 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
           
           <div className="flex items-center justify-end gap-3">
             <button onClick={onClose} className="px-5 py-2.5 rounded-xl font-medium text-slate-300 hover:bg-slate-800 transition-colors">
-              {mergeSuccess ? 'Close' : 'Cancel'}
+              Cancel
             </button>
             
             {activeTab === 'changes' && (
               <button 
                 onClick={() => setActiveTab('commit')}
-                disabled={changedFiles.length > 0 && selectedFiles.size === 0}
+                disabled={changedFiles.length === 0 || (changedFiles.length > 0 && selectedFiles.size === 0)}
                 className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-700 text-white font-medium rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-indigo-500/25"
               >
                 Continue <Plus size={18} />
@@ -485,8 +389,8 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
             
             {activeTab === 'commit' && (
               <button 
-                onClick={handleCommit}
-                disabled={isCommitting || (changedFiles.length > 0 && selectedFiles.size === 0)}
+                onClick={() => setIsConfirmOpen(true)}
+                disabled={isCommitting || changedFiles.length === 0 || (changedFiles.length > 0 && selectedFiles.size === 0)}
                 className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-700 text-white font-medium rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-indigo-500/25"
               >
                 {isCommitting ? (
@@ -497,22 +401,17 @@ export const CommitizenModal: React.FC<CommitizenModalProps> = ({ step, project,
               </button>
             )}
 
-            {activeTab === 'merge' && (
-              <button 
-                onClick={handleMerge}
-                disabled={isMerging || !mergeBranch.trim()}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white font-medium rounded-xl transition-colors flex items-center gap-2 shadow-lg shadow-emerald-500/25"
-              >
-                {isMerging ? (
-                  <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>Merging...</>
-                ) : (
-                  <><GitMerge size={18} />Execute Merge</>
-                )}
-              </button>
-            )}
           </div>
         </div>
       </div>
+      <ConfirmModal
+        isOpen={isConfirmOpen}
+        title="Confirm Commit"
+        message="Are you sure you want to commit the staged changes? This action will create a new git commit."
+        confirmLabel="Commit"
+        onConfirm={handleCommit}
+        onCancel={() => setIsConfirmOpen(false)}
+      />
     </div>
   );
 };

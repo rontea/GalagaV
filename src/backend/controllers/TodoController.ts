@@ -194,8 +194,9 @@ export class TodoController {
       TodoModel.updateTodo(todo);
       
       const todos = TodoModel.getTodos();
+      const activeTodos = todos.filter((t: any) => !t.archivedAt);
       TodoService.writeTodoToIndividualFile(todo, req.body.todoFolderPath, req.body.localFolderPath);
-      TodoService.updateMarkdownFileTodos(todos, req.body.todoFolderPath, req.body.localFolderPath);
+      TodoService.updateMarkdownFileTodos(activeTodos, req.body.todoFolderPath, req.body.localFolderPath, true);
       
       res.json({ success: true, message: "TODO exported to file successfully" });
     } catch (err) {
@@ -216,7 +217,8 @@ export class TodoController {
         });
         
         const allTodos = TodoModel.getTodos();
-        TodoService.updateMarkdownFileTodos(allTodos, todoFolderPath, localFolderPath);
+        const activeTodos = allTodos.filter((t: any) => !t.archivedAt);
+        TodoService.updateMarkdownFileTodos(activeTodos, todoFolderPath, localFolderPath, true);
       }
       res.json({ success: true, message: "TODOs exported to file successfully" });
     } catch (err) {
